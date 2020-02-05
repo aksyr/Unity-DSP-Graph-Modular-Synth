@@ -1,0 +1,66 @@
+﻿#pragma kernel Grid
+#pragma kernel Spectrum
+
+uint SampleRate;
+uint BufferSize;
+StructuredBuffer<float2> SpectrumData;
+RWTexture2D<float4> Result;
+
+#define BG_COLOR float4(0.2, 0.2, 0.35, 1.0)
+#define GRID_COLOR float4(0.6, 0.6, 0.9, 1.0)
+#define LINE_COLOR float4(0.0, 1.0, 0.8, 0.6)
+#define PLAYHEAD_COLOR float4(0.0, 1.0, 1.0, 1.0)
+#define TRIGGER_COLOR float4(1.0, 1.0, 1.0, 1.0)
+
+[numthreads(1,1,1)]
+void Grid(uint3 id : SV_DispatchThreadID)
+{
+    int width, height;
+    Result.GetDimensions(width, height);
+
+    uint howManyLines = SampleRate / 2 / 2000;
+    uint lineEveryX = width / howManyLines;
+
+    float4 res = BG_COLOR;
+
+    if (id.x > 0 && id.x % lineEveryX == 0) {
+        res = GRID_COLOR;
+    }
+    Result[id.xy] = res;
+}
+
+[numthreads(1, 1, 1)]
+void Spectrum(uint3 id : SV_DispatchThreadID)
+{
+    int width, height;
+    Result.GetDimensions(width, height);
+
+    float indexMul = (BufferSize / 2.0) / width;
+
+
+    /*float2 val = SpectrumData[id.x];
+
+    uint2 pos = val * 50 + uint2(width/2, height/2);
+    Result[pos] = LINE_COLOR;*/
+
+
+    uint prevX = (id.x == 0) ? (0) : (id.x - 1u);
+    uint x = id.x;
+
+    float valHeight = 300.0;
+    float prevVal = 20*log(length(SpectrumData[prevX*indexMul]));
+    float val = 20*log(length(SpectrumData[x*indexMul]));
+
+    uint prevY = clamp((prevVal / valHeight) * height, 0, height);
+    uint y = clamp((val / valHeight)*height, 0, height);
+
+    if (prevY > y) {
+        uint temp = prevY;
+        prevY = y;
+        y = temp;
+    }
+
+    for (uint i = prevY; i <= y; ++i) {
+        Result[uint2(x, i)] = LINE_COLOR;
+    }
+}

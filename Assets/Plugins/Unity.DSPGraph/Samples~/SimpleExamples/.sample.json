@@ -1,0 +1,5 @@
+{
+  "displayName": "Simple DSPGraph examples",
+  "description": "A set of some simple samples for DSPGraph",
+  "createSeparatePackage": false
+}

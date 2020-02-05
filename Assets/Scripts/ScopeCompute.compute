@@ -1,0 +1,104 @@
+﻿#pragma kernel Grid
+#pragma kernel Scope
+
+uint InputChannelsX;
+uint MaxChannels;
+uint BufferSize;
+uint BufferIdx;
+float TriggerThreshold;
+float ScopeXHeight;
+float ScopeXOffset;
+StructuredBuffer<float> ScopeData;
+RWTexture2D<float4> Result;
+
+#define BG_COLOR float4(0.2, 0.2, 0.35, 1.0)
+#define GRID_COLOR float4(0.6, 0.6, 0.9, 1.0)
+#define LINE_COLOR float4(0.0, 1.0, 0.8, 0.6)
+#define PLAYHEAD_COLOR float4(0.0, 1.0, 1.0, 1.0)
+#define TRIGGER_COLOR float4(1.0, 1.0, 1.0, 1.0)
+
+[numthreads(1,1,1)]
+void Grid(uint3 id : SV_DispatchThreadID)
+{
+    int width, height;
+    Result.GetDimensions(width, height);
+
+    float dupa = 1.001*(ScopeXHeight * 2.0) / height;
+    float val = (float(id.y)/float(height)-0.5)*ScopeXHeight*2.0f;
+
+    float4 res = BG_COLOR;
+    if (val < TriggerThreshold+ScopeXOffset)
+    {
+        res = lerp(res, TRIGGER_COLOR, 0.1);
+    }
+    //val = (float(id.y) / float(height) + 0.5) * ScopeXHeight * 2.0;
+
+    if (id.x != 0 && id.y != 0) {
+        if (abs(val) < dupa && val > 0.0) {
+            // nop
+        }
+        else if (distance(fmod(val, 1.0), 0.0) < dupa) {
+            res = GRID_COLOR;
+        }
+        if(id.x% ceil(width / 4u) == 0) {
+            res = GRID_COLOR;
+        }
+        if (id.x == BufferIdx) {
+            res = lerp(res, PLAYHEAD_COLOR, 0.8);
+        }
+    }
+
+    Result[id.xy] = res;
+}
+
+//[numthreads(1,1,1)]
+//void Scope (uint3 id : SV_DispatchThreadID)
+//{
+//    int width, height;
+//    Result.GetDimensions(width, height);
+//
+//    float prevVal = ScopeData[id.x == 0 ? 0 : id.x-1u];
+//    float val = ScopeData[id.x];
+//
+//    uint prevY = (ScopeXHeight + ScopeXOffset + prevVal) / (ScopeXHeight * 2) * height;
+//    uint y = (ScopeXHeight + ScopeXOffset + val)/(ScopeXHeight*2)*height;
+//
+//    if (prevY > y) {
+//        uint temp = prevY;
+//        prevY = y;
+//        y = temp;
+//    }
+//
+//    for (uint i = prevY; i <= y; ++i)
+//    {
+//        Result[uint2(id.x, i)] = LINE_COLOR;
+//    }
+//}
+
+[numthreads(1, 1, 1)]
+void Scope(uint3 id : SV_DispatchThreadID)
+{
+    int width, height;
+    Result.GetDimensions(width, height);
+
+    uint prevX = (id.x == 0) ? (0) : (id.x - 1u);
+    for (uint c = 0; c < InputChannelsX; ++c)
+    {
+        float prevVal = ScopeData[c*BufferSize+prevX];
+        float val = ScopeData[c*BufferSize+id.x];
+
+        uint prevY = (ScopeXHeight + ScopeXOffset + prevVal) / (ScopeXHeight * 2) * height;
+        uint y = (ScopeXHeight + ScopeXOffset + val) / (ScopeXHeight * 2) * height;
+
+        if (prevY > y) {
+            uint temp = prevY;
+            prevY = y;
+            y = temp;
+        }
+
+        for (uint i = prevY; i <= y; ++i)
+        {
+            Result[uint2(id.x, i)] = float4(lerp(Result[uint2(id.x, i)].xyz, LINE_COLOR.xyz, LINE_COLOR.w), 1.0);
+        }
+    }
+}
