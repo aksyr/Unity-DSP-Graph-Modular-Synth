@@ -1,0 +1,16 @@
+{
+    "name": "Unity.Audio.DSPGraph.Samples",
+    "references": [
+        "GUID:d6b18c983f9214d18a9d4e199d9c0fd7",
+        "GUID:2665a8d13d1b3f18800f46e256720795",
+        "GUID:d8b63aba1907145bea998dd612889d6b"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": []
+}

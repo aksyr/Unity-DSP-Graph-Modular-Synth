@@ -1,0 +1,21 @@
+{
+    "name": "Unity.Media.Utilities.Tests.Runtime",
+    "references": [
+        "GUID:b2b8b21845d8355448c429ddc59070aa",
+        "GUID:786a4efba8cda4ed0ac2e31e6007ae86",
+        "GUID:8db5d925f2d1edb4685cd0de6a37d76d"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": true,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll"
+    ],
+    "autoReferenced": true,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

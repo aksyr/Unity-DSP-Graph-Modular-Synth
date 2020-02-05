@@ -1,0 +1,15 @@
+{
+  "name": "com.unity.media.utilities",
+  "displayName": "Unity Media Utilities",
+  "version": "0.1.0-preview.3",
+  "unity": "2019.2",
+  "description": "Low-level, unsafe utilities shared by various unity packages",
+  "dependencies": {
+    "com.unity.mathematics": "1.1.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:Unity-Technologies/media.git",
+    "revision": "d747634ca12735f51e9ed41180bfbe6401ae9d51"
+  }
+}

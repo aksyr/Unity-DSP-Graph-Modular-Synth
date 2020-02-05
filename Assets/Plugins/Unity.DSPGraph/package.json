@@ -1,0 +1,25 @@
+{
+  "name": "com.unity.audio.dspgraph",
+  "displayName": "DSPGraph Audio Framework",
+  "version": "0.1.0-preview.11",
+  "unity": "2019.2",
+  "unityRelease": "8f1",
+  "description": "DSPGraph is a low level sample rendering framework for defining DSP kernels and processing audio samples. \n\nThis package: \n▪ Allows you to build audio signal processing graphs \n▪ Stream and process samples from AudioClips",
+  "dependencies": {
+    "com.unity.burst": "1.1.2",
+    "com.unity.mathematics": "1.1.0",
+    "com.unity.media.utilities": "0.1.0-preview.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:Unity-Technologies/media.git",
+    "revision": "34b837f156b86a3256ad556507c2df71da2dac4c"
+  },
+  "samples": [
+    {
+      "displayName": "Simple DSPGraph examples",
+      "description": "A set of some simple samples for DSPGraph",
+      "path": "Samples~/SimpleExamples"
+    }
+  ]
+}
