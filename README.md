@@ -12,7 +12,11 @@ Scenes
 - **DSP Synthesizer Code**<br>
   Organs-like synth assembled in code with Scope and Spectrum preview on screen.
 - **DSP Synthesizer Graph**<br>
-  The same organs-like synth assembled in xNode graph, which allows easy realtime manipulation during playback.
+  The same organs-like synth assembled in xNode graph, which allows easy realtime manipulation during playback.<br>
+  Hear this synth sound sample:<br>
+      <a href="http://www.youtube.com/watch?feature=player_embedded&v=PNYKHUhx-k0
+" target="_blank"><img src="https://i.imgur.com/Fh1psuW.png" 
+alt="WATCH SAMPLE VIDEO" width="250" height="250" border="0" /></a>
 
 Nodes
 -----
