@@ -1,11 +1,12 @@
 using System;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs.LowLevel.Unsafe;
 using Unity.Media.Utilities;
-using UnityEngine;
+using Debug = UnityEngine.Debug;
 
 namespace Unity.Audio
 {
@@ -126,13 +127,13 @@ namespace Unity.Audio
             {
                 var pType = typeof(TParameters);
                 if (!pType.IsEnum)
-                    throw new ArgumentException("CreateDSPNode<Parameters, Providers, T> must have Parameters as an enum.");
+                    ThrowNonEnumParameterError();
 
                 var pValues = Enum.GetValues(pType);
                 for (var i = 0; i < pValues.Length; i++)
                 {
                     if ((int)pValues.GetValue(i) != i)
-                        throw new ArgumentException("CreateDSPNode<Parameters, Providers, T> enum values must start at 0 and be consecutive");
+                        ThrowInvalidEnumValueError();
                 }
 
                 var paramsDescriptions = Utility.AllocateUnsafe<DSPParameterDescription>(pValues.Length, Allocator.Persistent, true);
@@ -166,18 +167,53 @@ namespace Unity.Audio
                 return data;
             }
 
+            private static void ThrowNonEnumParameterError()
+            {
+                ThrowNonEnumParameterErrorMono();
+                ThrowNonEnumParameterErrorBurst();
+            }
+
+            [BurstDiscard]
+            private static void ThrowNonEnumParameterErrorMono()
+            {
+                throw new ArgumentException("CreateDSPNode<Parameters, Providers, T> must have Parameters and Providers as enums.");
+                throw new ArgumentException("CreateDSPNode<Parameters, Providers, T> must have Parameters and Providers as enums.");
+            }
+
+            [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+            private static void ThrowNonEnumParameterErrorBurst()
+            {
+                throw new ArgumentException("CreateDSPNode<Parameters, Providers, T> must have Parameters and Providers as an enum.");
+            }
+
+            private static void ThrowInvalidEnumValueError()
+            {
+                ThrowInvalidEnumValueErrorMono();
+                ThrowInvalidEnumValueErrorBurst();
+            }
+
+            [BurstDiscard]
+            private static void ThrowInvalidEnumValueErrorMono()
+            {
+                throw new ArgumentException("CreateDSPNode<Parameters, Providers, T> enum values must start at 0 and be consecutive");
+            }
+
+            [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+            private static void ThrowInvalidEnumValueErrorBurst()
+            {
+                throw new ArgumentException("CreateDSPNode<Parameters, Providers, T> enum values must start at 0 and be consecutive");
+            }
+
             static SampleProviderDescriptionData CreateSampleProviderDescription()
             {
                 var pType = typeof(TProviders);
                 if (!pType.IsEnum)
-                    throw new ArgumentException("CreateDSPNode<Parameters, Providers, T> must have Providers as an enum.");
+                    ThrowNonEnumParameterError();
 
                 var pValues = Enum.GetValues(pType);
                 for (var i = 0; i < pValues.Length; i++)
-                {
                     if ((int)pValues.GetValue(i) != i)
-                        throw new ArgumentException("CreateDSPNode<Parameters, Providers, T> enum values must start at 0 and be consecutive");
-                }
+                        ThrowInvalidEnumValueError();
 
                 var provsDescriptions = Utility.AllocateUnsafe<DSPSampleProviderDescription>(pValues.Length, Allocator.Persistent, true);
                 for (var i = 0; i < pValues.Length; i++)
@@ -207,7 +243,7 @@ namespace Unity.Audio
                 out SampleProviderDescriptionData sampleProviderDescriptionData)
             {
                 if (s_JobReflectionData == null)
-                    s_JobReflectionData = (void*)JobsUtility.CreateJobReflectionData(typeof(TAudioKernel), JobType.Single, (ExecuteKernelFunction)Execute);
+                    { s_JobReflectionData = (void*)JobsUtility.CreateJobReflectionData(typeof(TAudioKernel), (ExecuteKernelFunction)Execute); }
 
                 if (s_ParameterDescriptionData.Descriptions == null)
                     s_ParameterDescriptionData = CreateParameterDescription();
@@ -241,8 +277,27 @@ namespace Unity.Audio
                         ExecuteKernelWithWrapper(audioDataPtr);
                         break;
                     default:
-                        throw new ArgumentException($"Invalid function index {functionIndex}", nameof(functionIndex));
+                        ThrowInvalidFunctionIndexError(functionIndex);
+                        break;
                 }
+            }
+
+            private static void ThrowInvalidFunctionIndexError(IntPtr functionIndex)
+            {
+                ThrowInvalidFunctionIndexErrorMono(functionIndex);
+                ThrowInvalidFunctionIndexErrorBurst(functionIndex);
+            }
+
+            [BurstDiscard]
+            private static void ThrowInvalidFunctionIndexErrorMono(IntPtr functionIndex)
+            {
+                throw new ArgumentException($"Invalid function index {functionIndex}", nameof(functionIndex));
+            }
+
+            [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+            private static void ThrowInvalidFunctionIndexErrorBurst(IntPtr functionIndex)
+            {
+                throw new ArgumentException($"Invalid function index {functionIndex}", nameof(functionIndex));
             }
 
             private static void ExecuteKernelWithWrapper(IntPtr audioDataPtr)

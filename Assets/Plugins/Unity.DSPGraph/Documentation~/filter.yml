@@ -1,0 +1,7 @@
+apiRules:
+  - exclude:
+      uidRegex: Unity.Audio.DSPGraphTests
+      type: Namespace
+  - exclude:
+      uidRegex: Unity.Audio.DSPGraphSamples
+      type: Namespace

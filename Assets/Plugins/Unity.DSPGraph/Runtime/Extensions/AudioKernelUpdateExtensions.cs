@@ -17,7 +17,7 @@ namespace Unity.Audio
             public static void Initialize(out void* jobReflectionData)
             {
                 if (s_JobReflectionData == null)
-                    s_JobReflectionData = (void*)JobsUtility.CreateJobReflectionData(typeof(TUpdate), JobType.Single, (ExecuteJobFunction)Execute);
+                    { s_JobReflectionData = (void*)JobsUtility.CreateJobReflectionData(typeof(TUpdate), (ExecuteJobFunction)Execute); }
 
                 jobReflectionData = s_JobReflectionData;
             }

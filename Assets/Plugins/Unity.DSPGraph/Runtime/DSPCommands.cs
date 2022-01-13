@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Unity.Burst;
 using Unity.Collections;
@@ -253,7 +254,6 @@ namespace Unity.Audio
         public void Dispose()
         {
         }
-
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -483,11 +483,10 @@ namespace Unity.Audio
         internal Handle m_Handle;
         internal Handle m_Node;
         internal int m_ChannelCount;
-        internal int m_Format;
 
         public void Schedule()
         {
-            m_Graph.AddPort(m_Node, m_ChannelCount, (SoundFormat)m_Format, DSPGraph.PortType.Inlet);
+            m_Graph.AddPort(m_Node, m_ChannelCount, DSPGraph.PortType.Inlet);
         }
 
         public void Cancel()
@@ -507,57 +506,10 @@ namespace Unity.Audio
         internal Handle m_Handle;
         internal Handle m_Node;
         internal int m_ChannelCount;
-        internal int m_Format;
 
         public void Schedule()
         {
-            m_Graph.AddPort(m_Node, m_ChannelCount, (SoundFormat)m_Format, DSPGraph.PortType.Outlet);
-        }
-
-        public void Cancel()
-        {
-        }
-
-        public void Dispose()
-        {
-        }
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    internal struct RemoveInletPortCommand : IDSPCommand
-    {
-        internal DSPCommandType m_Type;
-        internal DSPGraph m_Graph;
-        internal Handle m_Handle;
-        internal Handle m_Node;
-        internal int m_PortIndex;
-
-        public void Schedule()
-        {
-            m_Graph.RemovePort(m_Node, m_PortIndex, DSPGraph.PortType.Inlet);
-        }
-
-        public void Cancel()
-        {
-        }
-
-        public void Dispose()
-        {
-        }
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    internal struct RemoveOutletPortCommand : IDSPCommand
-    {
-        internal DSPCommandType m_Type;
-        internal DSPGraph m_Graph;
-        internal Handle m_Handle;
-        internal Handle m_Node;
-        internal int m_PortIndex;
-
-        public void Schedule()
-        {
-            m_Graph.RemovePort(m_Node, m_PortIndex, DSPGraph.PortType.Outlet);
+            m_Graph.AddPort(m_Node, m_ChannelCount, DSPGraph.PortType.Outlet);
         }
 
         public void Cancel()
@@ -601,22 +553,26 @@ namespace Unity.Audio
         {
         }
 
+        // Index validation for fixed-size array items can be performed here. For variable-array,
+        // it can only be performed in the job threads, where the array size is known and stable.
         private static void ValidateSampleProviderForSet(AudioKernelExtensions.DSPSampleProviderDescription provider, int index)
         {
             ValidateSampleProviderForSetWithMeaningfulMessages(provider, index);
-            // Index validation for fixed-size array items can be performed here. For variable-array,
-            // it can only be performed in the job threads, where the array size is known and stable.
-            if (provider.m_IsArray && provider.m_Size >= 0 && (provider.m_Size < index || index < 0))
-                throw new IndexOutOfRangeException("Provider index is out of range");
+            ValidateSampleProviderForSetBurst(provider, index);
         }
 
         [BurstDiscard]
         private static void ValidateSampleProviderForSetWithMeaningfulMessages(AudioKernelExtensions.DSPSampleProviderDescription provider, int index)
         {
-            // Index validation for fixed-size array items can be performed here. For variable-array,
-            // it can only be performed in the job threads, where the array size is known and stable.
             if (provider.m_IsArray && provider.m_Size >= 0 && (provider.m_Size < index || index < 0))
                 throw new IndexOutOfRangeException($"Provider index {index} is out of range");
+        }
+
+        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        private static void ValidateSampleProviderForSetBurst(AudioKernelExtensions.DSPSampleProviderDescription provider, int index)
+        {
+            if (provider.m_IsArray && provider.m_Size >= 0 && (provider.m_Size < index || index < 0))
+                throw new IndexOutOfRangeException("Provider index is out of range");
         }
 
         public void Dispose()
@@ -656,9 +612,23 @@ namespace Unity.Audio
         {
         }
 
+        // Can only insert into variable-size arrays.
         private static void ValidateSampleProviderForInsert(AudioKernelExtensions.DSPSampleProviderDescription provider)
         {
-            // Can only insert into variable-size arrays.
+            ValidateSampleProviderForInsertMono(provider);
+            ValidateSampleProviderForInsertBurst(provider);
+        }
+
+        [BurstDiscard]
+        private static void ValidateSampleProviderForInsertMono(AudioKernelExtensions.DSPSampleProviderDescription provider)
+        {
+            if (!provider.m_IsArray || provider.m_Size >= 0)
+                throw new ArgumentException("Can only insert into variable-size array.");
+        }
+
+        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        private static void ValidateSampleProviderForInsertBurst(AudioKernelExtensions.DSPSampleProviderDescription provider)
+        {
             if (!provider.m_IsArray || provider.m_Size >= 0)
                 throw new ArgumentException("Can only insert into variable-size array.");
         }
@@ -696,9 +666,23 @@ namespace Unity.Audio
         {
         }
 
+        // Can only remove from variable-size arrays.
         private static void ValidateSampleProviderForRemove(AudioKernelExtensions.DSPSampleProviderDescription provider)
         {
-            // Can only remove from variable-size arrays.
+            ValidateSampleProviderForRemoveMono(provider);
+            ValidateSampleProviderForRemoveBurst(provider);
+        }
+
+        [BurstDiscard]
+        private static void ValidateSampleProviderForRemoveMono(AudioKernelExtensions.DSPSampleProviderDescription provider)
+        {
+            if (!provider.m_IsArray || provider.m_Size >= 0)
+                throw new ArgumentException("Can only remove sample providers from variable-size array");
+        }
+
+        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        private static void ValidateSampleProviderForRemoveBurst(AudioKernelExtensions.DSPSampleProviderDescription provider)
+        {
             if (!provider.m_IsArray || provider.m_Size >= 0)
                 throw new ArgumentException("Can only remove sample providers from variable-size array");
         }
@@ -730,8 +714,6 @@ namespace Unity.Audio
         SustainAttenuation,
         AddInletPort,
         AddOutletPort,
-        RemoveInletPort,
-        RemoveOutletPort,
         SetSampleProvider,
         InsertSampleProvider,
         RemoveSampleProvider,

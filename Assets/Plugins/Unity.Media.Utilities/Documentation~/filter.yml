@@ -1,0 +1,4 @@
+apiRules:
+  - exclude:
+      uidRegex: Unity.Media.Utilities.Tests.Runtime
+      type: Namespace

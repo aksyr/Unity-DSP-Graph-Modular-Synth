@@ -1,16 +1,19 @@
 {
-    "name": "Unity.Audio.DSPGraph.Samples",
+    "name": "Unity.Audio.DSPGraphSamples",
+    "rootNamespace": "Unity.Audio.DSPGraphSamples",
     "references": [
         "GUID:d6b18c983f9214d18a9d4e199d9c0fd7",
         "GUID:2665a8d13d1b3f18800f46e256720795",
-        "GUID:d8b63aba1907145bea998dd612889d6b"
+        "GUID:d8b63aba1907145bea998dd612889d6b",
+        "GUID:b2b8b21845d8355448c429ddc59070aa"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
-    "allowUnsafeCode": false,
+    "allowUnsafeCode": true,
     "overrideReferences": false,
     "precompiledReferences": [],
     "autoReferenced": true,
     "defineConstraints": [],
-    "versionDefines": []
+    "versionDefines": [],
+    "noEngineReferences": false
 }

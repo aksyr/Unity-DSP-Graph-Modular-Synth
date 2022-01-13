@@ -1,12 +1,11 @@
 {
     "name": "Unity.Audio.DSPGraph.Tests",
+    "rootNamespace": "Unity.Audio.DSPGraphTests",
     "references": [
-        "Unity.Audio.DSPGraph",
-        "Unity.Mathematics",
-        "UnityEngine.TestRunner",
-        "UnityEditor.TestRunner",
-        "Unity.Media.Core",
-        "Unity.Media.Utilities"
+        "GUID:d6b18c983f9214d18a9d4e199d9c0fd7",
+        "GUID:27619889b8ba8c24980f49ee34dbb44a",
+        "GUID:d8b63aba1907145bea998dd612889d6b",
+        "GUID:b2b8b21845d8355448c429ddc59070aa"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
@@ -19,5 +18,6 @@
     "defineConstraints": [
         "UNITY_INCLUDE_TESTS"
     ],
-    "versionDefines": []
+    "versionDefines": [],
+    "noEngineReferences": false
 }

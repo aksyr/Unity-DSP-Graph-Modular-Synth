@@ -4,448 +4,541 @@ using Unity.Collections;
 using Unity.Audio;
 using Unity.Mathematics;
 
-public class DSPGraphParameters
+namespace Unity.Audio.DSPGraphTests
 {
-    static void PumpGraph(in DSPGraph graph, int channelCount, DSPGraph.ExecutionMode executionMode)
+    public class DSPGraphParameters
     {
-        using (var buffer = new NativeArray<float>(200, Allocator.Temp))
+        static void PumpGraph(in DSPGraph graph, int channelCount, DSPGraph.ExecutionMode executionMode)
         {
-            int frameCount = buffer.Length / channelCount;
-            graph.BeginMix(frameCount, executionMode);
-            graph.ReadMix(buffer, frameCount, channelCount);
-        }
-    }
-
-    struct TestImmediateLerp : IAudioKernel<TestImmediateLerp.Parameters, NoProviders>
-    {
-        public enum Parameters
-        {
-            Parameter
-        }
-
-        public void Initialize() {}
-
-        public void Execute(ref ExecuteContext<Parameters, NoProviders> context)
-        {
-            for (int i = 0; i < context.DSPBufferSize; i++)
-                Assert.AreEqual(i * 100.0 / 99.0, context.Parameters.GetFloat(Parameters.Parameter, i), 0.0001);
-        }
-
-        public void Dispose() {}
-    }
-
-    [Test]
-    [TestCase(DSPGraph.ExecutionMode.Jobified)]
-    [TestCase(DSPGraph.ExecutionMode.Synchronous)]
-    public void ImmediateLerp(DSPGraph.ExecutionMode executionMode)
-    {
-        var channelCount = 2;
-        var soundFormat = SoundFormat.Stereo;
-        using (var graph = DSPGraph.Create(soundFormat, channelCount, 100, 1000))
-        {
-            DSPNode node;
-            using (var block = graph.CreateCommandBlock())
+            using (var buffer = new NativeArray<float>(200, Allocator.Temp))
             {
-                node = block.CreateDSPNode<TestImmediateLerp.Parameters, NoProviders, TestImmediateLerp>();
-                block.AddOutletPort(node, channelCount, soundFormat);
-                block.Connect(node, 0, graph.RootDSP, 0);
+                int frameCount = buffer.Length / channelCount;
+                graph.BeginMix(frameCount, executionMode);
+                graph.ReadMix(buffer, frameCount, channelCount);
+            }
+        }
 
-                block.SetFloat<TestImmediateLerp.Parameters, NoProviders, TestImmediateLerp>(node,
-                    TestImmediateLerp.Parameters.Parameter, 100.0f, 100);
+        struct TestImmediateLerp : IAudioKernel<TestImmediateLerp.Parameters, NoProviders>
+        {
+            public enum Parameters
+            {
+                Parameter
             }
 
-            PumpGraph(in graph, channelCount, executionMode);
-
-            using (var block = graph.CreateCommandBlock())
-                block.ReleaseDSPNode(node);
-        }
-    }
-
-    struct ClampParams : IAudioKernel<ClampParams.Parameters, NoProviders>
-    {
-        public enum Parameters
-        {
-            [ParameterDefault(0.0f)]
-            [ParameterRange(0.0f, 100.0f)]
-            Parameter
-        }
-
-        public void Initialize() {}
-
-        public void Execute(ref ExecuteContext<Parameters, NoProviders> context)
-        {
-            for (int i = 0; i < context.DSPBufferSize; i++)
-                Assert.LessOrEqual(context.Parameters.GetFloat(Parameters.Parameter, i), 100.0f);
-        }
-
-        public void Dispose() {}
-    }
-
-    [Test]
-    [TestCase(DSPGraph.ExecutionMode.Jobified)]
-    [TestCase(DSPGraph.ExecutionMode.Synchronous)]
-    public void ClampedImmediateLerp(DSPGraph.ExecutionMode executionMode)
-    {
-        var channelCount = 2;
-        var soundFormat = SoundFormat.Stereo;
-        using (var graph = DSPGraph.Create(soundFormat, channelCount, 100, 1000))
-        {
-            DSPNode node;
-            using (var block = graph.CreateCommandBlock())
+            public void Initialize()
             {
-                node = block.CreateDSPNode<ClampParams.Parameters, NoProviders, ClampParams>();
-                block.AddOutletPort(node, channelCount, soundFormat);
-                block.Connect(node, 0, graph.RootDSP, 0);
-
-                block.SetFloat<ClampParams.Parameters, NoProviders, ClampParams>(node, ClampParams.Parameters.Parameter, 200.0f, 100);
             }
 
-            PumpGraph(in graph, channelCount, executionMode);
-
-            using (var block = graph.CreateCommandBlock())
-                block.ReleaseDSPNode(node);
-        }
-    }
-
-    struct DefaultParams : IAudioKernel<DefaultParams.Parameters, NoProviders>
-    {
-        public enum Parameters
-        {
-            [ParameterDefault(69.0f)]
-            Parameter
-        }
-
-        public void Initialize() {}
-
-        public void Execute(ref ExecuteContext<Parameters, NoProviders> context)
-        {
-            for (int i = 0; i < context.DSPBufferSize; i++)
-                Assert.AreEqual(69.0f, context.Parameters.GetFloat(Parameters.Parameter, i));
-        }
-
-        public void Dispose() {}
-    }
-
-    [Test]
-    [TestCase(DSPGraph.ExecutionMode.Jobified)]
-    [TestCase(DSPGraph.ExecutionMode.Synchronous)]
-    public void DefaultParameters(DSPGraph.ExecutionMode executionMode)
-    {
-        var channelCount = 2;
-        var soundFormat = SoundFormat.Stereo;
-        using (var graph = DSPGraph.Create(soundFormat, channelCount, 100, 1000))
-        {
-            DSPNode node;
-            using (var block = graph.CreateCommandBlock())
-            {
-                node = block.CreateDSPNode<DefaultParams.Parameters, NoProviders, DefaultParams>();
-                block.AddOutletPort(node, channelCount, soundFormat);
-                block.Connect(node, 0, graph.RootDSP, 0);
-            }
-
-            PumpGraph(in graph, channelCount, executionMode);
-
-            using (var block = graph.CreateCommandBlock())
-                block.ReleaseDSPNode(node);
-        }
-    }
-
-    struct InterruptedKey : IAudioKernel<InterruptedKey.Parameters, NoProviders>
-    {
-        public enum Parameters
-        {
-            [ParameterDefault(0.0f)]
-            Key,
-
-            [ParameterDefault(0.0f)]
-            Toggle
-        }
-
-        public void Initialize() {}
-
-        public void Execute(ref ExecuteContext<Parameters, NoProviders> context)
-        {
-            if (Math.Abs(context.Parameters.GetFloat(Parameters.Toggle, 0)) < 0.00001f)
+            public void Execute(ref ExecuteContext<Parameters, NoProviders> context)
             {
                 for (int i = 0; i < context.DSPBufferSize; i++)
-                    Assert.AreEqual((i + context.DSPClock) * 100.0 / 199.0, context.Parameters.GetFloat(Parameters.Key, i), 0.0001);
+                    Assert.AreEqual(i * 100.0 / 99.0, context.Parameters.GetFloat(Parameters.Parameter, i), 0.0001);
             }
-            else
+
+            public void Dispose()
             {
-                for (int i = 0; i < context.DSPBufferSize; i++)
-                    Assert.AreEqual(69.0f, context.Parameters.GetFloat(Parameters.Key, i), 0.0001);
             }
         }
 
-        public void Dispose() {}
-    }
-
-    [Test]
-    [TestCase(DSPGraph.ExecutionMode.Jobified)]
-    [TestCase(DSPGraph.ExecutionMode.Synchronous)]
-    public void InterruptedKeys(DSPGraph.ExecutionMode executionMode)
-    {
-        var channelCount = 2;
-        var soundFormat = SoundFormat.Stereo;
-        using (var graph = DSPGraph.Create(soundFormat, channelCount, 100, 1000))
+        [Test]
+        [TestCase(DSPGraph.ExecutionMode.Jobified)]
+        [TestCase(DSPGraph.ExecutionMode.Synchronous)]
+        public void ImmediateLerp(DSPGraph.ExecutionMode executionMode)
         {
-            DSPNode node;
-            using (var block = graph.CreateCommandBlock())
+            var channelCount = 2;
+            var soundFormat = SoundFormat.Stereo;
+            using (var graph = DSPGraph.Create(soundFormat, channelCount, 100, 1000))
             {
-                node = block.CreateDSPNode<InterruptedKey.Parameters, NoProviders, InterruptedKey>();
-                block.AddOutletPort(node, channelCount, soundFormat);
-                block.Connect(node, 0, graph.RootDSP, 0);
-                block.SetFloat<InterruptedKey.Parameters, NoProviders, InterruptedKey>(node, InterruptedKey.Parameters.Key, 100.0f, 200);
-            }
-
-            using (var buff = new NativeArray<float>(200, Allocator.Temp))
-            {
-                graph.BeginMix(0, executionMode);
-                graph.ReadMix(buff, buff.Length / channelCount, channelCount);
-
+                DSPNode node;
                 using (var block = graph.CreateCommandBlock())
                 {
-                    block.SetFloat<InterruptedKey.Parameters, NoProviders, InterruptedKey>(node, InterruptedKey.Parameters.Key,
-                        69.0f);
-                    block.SetFloat<InterruptedKey.Parameters, NoProviders, InterruptedKey>(node, InterruptedKey.Parameters.Toggle,
-                        1.0f);
+                    node = block.CreateDSPNode<TestImmediateLerp.Parameters, NoProviders, TestImmediateLerp>();
+                    block.AddOutletPort(node, channelCount);
+                    block.Connect(node, 0, graph.RootDSP, 0);
+
+                    block.SetFloat<TestImmediateLerp.Parameters, NoProviders, TestImmediateLerp>(node,
+                        TestImmediateLerp.Parameters.Parameter, 100.0f, 100);
                 }
 
-                graph.BeginMix(0, executionMode);
-                graph.ReadMix(buff, buff.Length / channelCount, channelCount);
+                PumpGraph(in graph, channelCount, executionMode);
+
+                using (var block = graph.CreateCommandBlock())
+                    block.ReleaseDSPNode(node);
             }
-
-            using (var block = graph.CreateCommandBlock())
-                block.ReleaseDSPNode(node);
-        }
-    }
-
-    struct TwoLerps : IAudioKernel<TwoLerps.Parameters, NoProviders>
-    {
-        public enum Parameters
-        {
-            [ParameterDefault(0.0f)]
-            Parameter
         }
 
-        public void Initialize() {}
-
-        public void Execute(ref ExecuteContext<Parameters, NoProviders> context)
+        struct ClampParams : IAudioKernel<ClampParams.Parameters, NoProviders>
         {
-            for (int i = 0; i < 50; i++)
-                Assert.AreEqual(i * 100.0 / 49.0, context.Parameters.GetFloat(Parameters.Parameter, i), 0.0001);
-
-            for (int i = 50; i < 100; i++)
-                Assert.AreEqual(100.0f + ((i - 49) * -100.0 / 50.0), context.Parameters.GetFloat(Parameters.Parameter, i), 0.0001);
-        }
-
-        public void Dispose() {}
-    }
-
-    [Test]
-    [TestCase(DSPGraph.ExecutionMode.Jobified)]
-    [TestCase(DSPGraph.ExecutionMode.Synchronous)]
-    public void TwoLerpsInOneMix(DSPGraph.ExecutionMode executionMode)
-    {
-        var channelCount = 2;
-        var soundFormat = SoundFormat.Stereo;
-        using (var graph = DSPGraph.Create(soundFormat, channelCount, 100, 1000))
-        {
-            DSPNode node;
-            using (var block = graph.CreateCommandBlock())
+            public enum Parameters
             {
-                node = block.CreateDSPNode<TwoLerps.Parameters, NoProviders, TwoLerps>();
-                block.AddOutletPort(node, channelCount, soundFormat);
-                block.Connect(node, 0, graph.RootDSP, 0);
-
-                block.AddFloatKey<TwoLerps.Parameters, NoProviders, TwoLerps>(node, TwoLerps.Parameters.Parameter, 49, 100.0f);
-                block.AddFloatKey<TwoLerps.Parameters, NoProviders, TwoLerps>(node, TwoLerps.Parameters.Parameter, 99, 0.0f);
+                [ParameterDefault(0.0f)][ParameterRange(0.0f, 100.0f)]
+                Parameter
             }
 
-            PumpGraph(in graph, channelCount, executionMode);
-
-            using (var block = graph.CreateCommandBlock())
-                block.ReleaseDSPNode(node);
-        }
-    }
-
-    struct TestSecondMix : IAudioKernel<TestSecondMix.Parameters, NoProviders>
-    {
-        public enum Parameters
-        {
-            Parameter
-        }
-
-        bool m_MixedOnce;
-        public const float ValueAfterFirstMix = 31.337f;
-
-        public void Initialize() {}
-
-        public void Execute(ref ExecuteContext<Parameters, NoProviders> context)
-        {
-            if (!m_MixedOnce)
+            public void Initialize()
             {
-                m_MixedOnce = true;
-                return;
             }
 
-            for (int i = 0; i < context.DSPBufferSize; i++)
-                Assert.AreEqual(ValueAfterFirstMix, context.Parameters.GetFloat(Parameters.Parameter, i), 0.0001);
-        }
-
-        public void Dispose() {}
-    }
-
-    [Test]
-    [TestCase(DSPGraph.ExecutionMode.Jobified)]
-    [TestCase(DSPGraph.ExecutionMode.Synchronous)]
-    public void AfterUncheckedInterpolation_ParameterValueIsCorrect(DSPGraph.ExecutionMode executionMode)
-    {
-        var channelCount = 2;
-        var soundFormat = SoundFormat.Stereo;
-        var bufferSize = 100;
-        using (var graph = DSPGraph.Create(soundFormat, channelCount, bufferSize, 1000))
-        {
-            DSPNode node;
-            using (var block = graph.CreateCommandBlock())
+            public void Execute(ref ExecuteContext<Parameters, NoProviders> context)
             {
-                node = block.CreateDSPNode<TestSecondMix.Parameters, NoProviders, TestSecondMix>();
-                block.AddOutletPort(node, channelCount, soundFormat);
-                block.Connect(node, 0, graph.RootDSP, 0);
-
-                block.SetFloat<TestSecondMix.Parameters, NoProviders, TestSecondMix>(node,
-                    TestSecondMix.Parameters.Parameter, TestSecondMix.ValueAfterFirstMix, bufferSize / 2);
+                for (int i = 0; i < context.DSPBufferSize; i++)
+                    Assert.LessOrEqual(context.Parameters.GetFloat(Parameters.Parameter, i), 100.0f);
             }
 
-            // Parameter interpolation finishes without being read during the first mix
-            PumpGraph(in graph, channelCount, executionMode);
-            // Now we verify that the parameter value is correct
-            PumpGraph(in graph, channelCount, executionMode);
-
-            using (var block = graph.CreateCommandBlock())
-                block.ReleaseDSPNode(node);
+            public void Dispose()
+            {
+            }
         }
-    }
 
-    [Test]
-    public void AppendKey_AddsKey()
-    {
-        DSPNode node = default;
-        using (var setup = new GraphSetup((graphSetup, graph, block) =>
+        [Test]
+        [TestCase(DSPGraph.ExecutionMode.Jobified)]
+        [TestCase(DSPGraph.ExecutionMode.Synchronous)]
+        public void ClampedImmediateLerp(DSPGraph.ExecutionMode executionMode)
         {
-            node = graphSetup.CreateDSPNode<SingleParameterKernel.Parameters, NoProviders, SingleParameterKernel>();
-        }))
-        {
-            setup.PumpGraph();
+            var channelCount = 2;
+            var soundFormat = SoundFormat.Stereo;
+            using (var graph = DSPGraph.Create(soundFormat, channelCount, 100, 1000))
+            {
+                DSPNode node;
+                using (var block = graph.CreateCommandBlock())
+                {
+                    node = block.CreateDSPNode<ClampParams.Parameters, NoProviders, ClampParams>();
+                    block.AddOutletPort(node, channelCount);
+                    block.Connect(node, 0, graph.RootDSP, 0);
 
-            long dspClock = 42;
-            float4 value = 10.0f;
+                    block.SetFloat<ClampParams.Parameters, NoProviders, ClampParams>(node,
+                        ClampParams.Parameters.Parameter, 200.0f, 100);
+                }
 
-            // Get copy of node with populated fields
-            node = setup.Graph.LookupNode(node.Handle);
-            var nodeParameters = node.Parameters;
-            var parameter = nodeParameters[(int)SingleParameterKernel.Parameters.Parameter];
-            var newKeyIndex = setup.Graph.AppendKey(parameter.KeyIndex, DSPParameterKey.NullIndex, dspClock, value);
+                PumpGraph(in graph, channelCount, executionMode);
 
-            Assert.AreNotEqual(DSPParameterKey.NullIndex, newKeyIndex);
-            var key = setup.Graph.ParameterKeys[newKeyIndex];
-            Assert.AreEqual(dspClock, key.DSPClock);
-            Assert.AreEqual(value[0], key.Value[0], 0.001f);
-            Assert.AreEqual(DSPParameterKey.NullIndex, key.NextKeyIndex);
+                using (var block = graph.CreateCommandBlock())
+                    block.ReleaseDSPNode(node);
+            }
         }
-    }
 
-    [Test]
-    public void AppendMultipleKeys_ChainsKeys()
-    {
-        DSPNode node = default;
-        using (var setup = new GraphSetup((graphSetup, graph, block) =>
+        struct DefaultParams : IAudioKernel<DefaultParams.Parameters, NoProviders>
         {
-            node = graphSetup.CreateDSPNode<SingleParameterKernel.Parameters, NoProviders, SingleParameterKernel>();
-        }))
-        {
-            setup.PumpGraph();
+            public enum Parameters
+            {
+                [ParameterDefault(69.0f)] Parameter
+            }
 
-            long dspClock = 42;
-            float4 value = 10.0f;
+            public void Initialize()
+            {
+            }
 
-            // Get copy of node with populated fields
-            node = setup.Graph.LookupNode(node.Handle);
-            var nodeParameters = node.Parameters;
-            var parameter = nodeParameters[(int)SingleParameterKernel.Parameters.Parameter];
-            var firstKeyIndex = setup.Graph.AppendKey(parameter.KeyIndex, DSPParameterKey.NullIndex, dspClock, value);
-            Assert.AreNotEqual(DSPParameterKey.NullIndex, firstKeyIndex);
-            var secondKeyIndex = setup.Graph.AppendKey(firstKeyIndex, firstKeyIndex, dspClock + 1, value + 1);
-            Assert.AreNotEqual(DSPParameterKey.NullIndex, secondKeyIndex);
-            Assert.AreNotEqual(firstKeyIndex, secondKeyIndex);
+            public void Execute(ref ExecuteContext<Parameters, NoProviders> context)
+            {
+                for (int i = 0; i < context.DSPBufferSize; i++)
+                    Assert.AreEqual(69.0f, context.Parameters.GetFloat(Parameters.Parameter, i));
+            }
 
-            var key = setup.Graph.ParameterKeys[firstKeyIndex];
-            Assert.AreEqual(dspClock, key.DSPClock);
-            Assert.AreEqual(value[0], key.Value[0], 0.001f);
-            Assert.AreEqual(secondKeyIndex, key.NextKeyIndex);
-
-            key = setup.Graph.ParameterKeys[secondKeyIndex];
-            Assert.AreEqual(dspClock + 1, key.DSPClock);
-            Assert.AreEqual(value[0] + 1, key.Value[0], 0.001f);
-            Assert.AreEqual(DSPParameterKey.NullIndex, key.NextKeyIndex);
+            public void Dispose()
+            {
+            }
         }
-    }
 
-    [Test]
-    public void GetLastKey_ReturnsExpectedKey()
-    {
-        DSPNode node = default;
-        using (var setup = new GraphSetup((graphSetup, graph, block) =>
+        [Test]
+        [TestCase(DSPGraph.ExecutionMode.Jobified)]
+        [TestCase(DSPGraph.ExecutionMode.Synchronous)]
+        public void DefaultParameters(DSPGraph.ExecutionMode executionMode)
         {
-            node = graphSetup.CreateDSPNode<SingleParameterKernel.Parameters, NoProviders, SingleParameterKernel>();
-        }))
-        {
-            setup.PumpGraph();
+            var channelCount = 2;
+            var soundFormat = SoundFormat.Stereo;
+            using (var graph = DSPGraph.Create(soundFormat, channelCount, 100, 1000))
+            {
+                DSPNode node;
+                using (var block = graph.CreateCommandBlock())
+                {
+                    node = block.CreateDSPNode<DefaultParams.Parameters, NoProviders, DefaultParams>();
+                    block.AddOutletPort(node, channelCount);
+                    block.Connect(node, 0, graph.RootDSP, 0);
+                }
 
-            long dspClock = 42;
-            float4 value = 10.0f;
+                PumpGraph(in graph, channelCount, executionMode);
 
-            // Get copy of node with populated fields
-            node = setup.Graph.LookupNode(node.Handle);
-            var parameter = node.Parameters[(int)SingleParameterKernel.Parameters.Parameter];
-            Assert.AreEqual(DSPParameterKey.NullIndex, setup.Graph.GetLastParameterKeyIndex(parameter.KeyIndex));
-
-            var firstKeyIndex = setup.Graph.AppendKey(parameter.KeyIndex, DSPParameterKey.NullIndex, dspClock, value);
-            Assert.AreNotEqual(DSPParameterKey.NullIndex, firstKeyIndex);
-            Assert.AreEqual(firstKeyIndex, setup.Graph.GetLastParameterKeyIndex(firstKeyIndex));
-
-            var secondKeyIndex = setup.Graph.AppendKey(firstKeyIndex, firstKeyIndex, dspClock + 1, value + 1);
-            Assert.AreNotEqual(DSPParameterKey.NullIndex, secondKeyIndex);
-            Assert.AreNotEqual(firstKeyIndex, secondKeyIndex);
-            Assert.AreEqual(secondKeyIndex, setup.Graph.GetLastParameterKeyIndex(firstKeyIndex));
+                using (var block = graph.CreateCommandBlock())
+                    block.ReleaseDSPNode(node);
+            }
         }
-    }
 
-    [Test]
-    public void FreeKeys_ClearsKeys()
-    {
-        DSPNode node = default;
-        using (var setup = new GraphSetup((graphSetup, graph, block) =>
+        struct InterruptedKey : IAudioKernel<InterruptedKey.Parameters, NoProviders>
         {
-            node = graphSetup.CreateDSPNode<SingleParameterKernel.Parameters, NoProviders, SingleParameterKernel>();
-        }))
+            public enum Parameters
+            {
+                [ParameterDefault(0.0f)] Key,
+
+                [ParameterDefault(0.0f)] Toggle
+            }
+
+            public void Initialize()
+            {
+            }
+
+            public void Execute(ref ExecuteContext<Parameters, NoProviders> context)
+            {
+                if (Math.Abs(context.Parameters.GetFloat(Parameters.Toggle, 0)) < 0.00001f)
+                {
+                    for (int i = 0; i < context.DSPBufferSize; i++)
+                        Assert.AreEqual((i + context.DSPClock) * 100.0 / 199.0,
+                            context.Parameters.GetFloat(Parameters.Key, i), 0.0001);
+                }
+                else
+                {
+                    for (int i = 0; i < context.DSPBufferSize; i++)
+                        Assert.AreEqual(69.0f, context.Parameters.GetFloat(Parameters.Key, i), 0.0001);
+                }
+            }
+
+            public void Dispose()
+            {
+            }
+        }
+
+        [Test]
+        [TestCase(DSPGraph.ExecutionMode.Jobified)]
+        [TestCase(DSPGraph.ExecutionMode.Synchronous)]
+        public void InterruptedKeys(DSPGraph.ExecutionMode executionMode)
         {
-            setup.PumpGraph();
+            var channelCount = 2;
+            var soundFormat = SoundFormat.Stereo;
+            using (var graph = DSPGraph.Create(soundFormat, channelCount, 100, 1000))
+            {
+                DSPNode node;
+                using (var block = graph.CreateCommandBlock())
+                {
+                    node = block.CreateDSPNode<InterruptedKey.Parameters, NoProviders, InterruptedKey>();
+                    block.AddOutletPort(node, channelCount);
+                    block.Connect(node, 0, graph.RootDSP, 0);
+                    block.SetFloat<InterruptedKey.Parameters, NoProviders, InterruptedKey>(node,
+                        InterruptedKey.Parameters.Key, 100.0f, 200);
+                }
 
-            long dspClock = 42;
-            float4 value = 10.0f;
+                using (var buff = new NativeArray<float>(200, Allocator.Temp))
+                {
+                    graph.BeginMix(0, executionMode);
+                    graph.ReadMix(buff, buff.Length / channelCount, channelCount);
 
-            // Get copy of node with populated fields
-            node = setup.Graph.LookupNode(node.Handle);
-            var parameter = node.Parameters[(int)SingleParameterKernel.Parameters.Parameter];
-            Assert.AreEqual(DSPParameterKey.NullIndex, setup.Graph.GetLastParameterKeyIndex(parameter.KeyIndex));
+                    using (var block = graph.CreateCommandBlock())
+                    {
+                        block.SetFloat<InterruptedKey.Parameters, NoProviders, InterruptedKey>(node,
+                            InterruptedKey.Parameters.Key,
+                            69.0f);
+                        block.SetFloat<InterruptedKey.Parameters, NoProviders, InterruptedKey>(node,
+                            InterruptedKey.Parameters.Toggle,
+                            1.0f);
+                    }
 
-            var firstKeyIndex = setup.Graph.AppendKey(parameter.KeyIndex, DSPParameterKey.NullIndex, dspClock, value);
-            var secondKeyIndex = setup.Graph.AppendKey(firstKeyIndex, firstKeyIndex, dspClock + 1, value + 1);
-            Assert.AreEqual(secondKeyIndex, setup.Graph.GetLastParameterKeyIndex(firstKeyIndex));
+                    graph.BeginMix(0, executionMode);
+                    graph.ReadMix(buff, buff.Length / channelCount, channelCount);
+                }
 
-            Assert.AreEqual(DSPParameterKey.NullIndex, setup.Graph.FreeParameterKeys(firstKeyIndex));
-            Assert.AreEqual(DSPParameterKey.NullIndex, setup.Graph.GetLastParameterKeyIndex(firstKeyIndex));
+                using (var block = graph.CreateCommandBlock())
+                    block.ReleaseDSPNode(node);
+            }
+        }
+
+        struct TwoLerps : IAudioKernel<TwoLerps.Parameters, NoProviders>
+        {
+            public enum Parameters
+            {
+                [ParameterDefault(0.0f)] Parameter
+            }
+
+            public void Initialize()
+            {
+            }
+
+            public void Execute(ref ExecuteContext<Parameters, NoProviders> context)
+            {
+                for (int i = 0; i < 50; i++)
+                    Assert.AreEqual(i * 100.0 / 49.0, context.Parameters.GetFloat(Parameters.Parameter, i), 0.0001);
+
+                for (int i = 50; i < 100; i++)
+                    Assert.AreEqual(100.0f + ((i - 49) * -100.0 / 50.0),
+                        context.Parameters.GetFloat(Parameters.Parameter, i), 0.0001);
+            }
+
+            public void Dispose()
+            {
+            }
+        }
+
+        [Test]
+        [TestCase(DSPGraph.ExecutionMode.Jobified)]
+        [TestCase(DSPGraph.ExecutionMode.Synchronous)]
+        public void TwoLerpsInOneMix(DSPGraph.ExecutionMode executionMode)
+        {
+            var channelCount = 2;
+            var soundFormat = SoundFormat.Stereo;
+            using (var graph = DSPGraph.Create(soundFormat, channelCount, 100, 1000))
+            {
+                DSPNode node;
+                using (var block = graph.CreateCommandBlock())
+                {
+                    node = block.CreateDSPNode<TwoLerps.Parameters, NoProviders, TwoLerps>();
+                    block.AddOutletPort(node, channelCount);
+                    block.Connect(node, 0, graph.RootDSP, 0);
+
+                    block.AddFloatKey<TwoLerps.Parameters, NoProviders, TwoLerps>(node, TwoLerps.Parameters.Parameter,
+                        49, 100.0f);
+                    block.AddFloatKey<TwoLerps.Parameters, NoProviders, TwoLerps>(node, TwoLerps.Parameters.Parameter,
+                        99, 0.0f);
+                }
+
+                PumpGraph(in graph, channelCount, executionMode);
+
+                using (var block = graph.CreateCommandBlock())
+                    block.ReleaseDSPNode(node);
+            }
+        }
+
+        struct TestSecondMix : IAudioKernel<TestSecondMix.Parameters, NoProviders>
+        {
+            public enum Parameters
+            {
+                Parameter
+            }
+
+            bool m_MixedOnce;
+            public const float ValueAfterFirstMix = 31.337f;
+
+            public void Initialize()
+            {
+            }
+
+            public void Execute(ref ExecuteContext<Parameters, NoProviders> context)
+            {
+                if (!m_MixedOnce)
+                {
+                    m_MixedOnce = true;
+                    return;
+                }
+
+                for (int i = 0; i < context.DSPBufferSize; i++)
+                    Assert.AreEqual(ValueAfterFirstMix, context.Parameters.GetFloat(Parameters.Parameter, i), 0.0001);
+            }
+
+            public void Dispose()
+            {
+            }
+        }
+
+        [Test]
+        [TestCase(DSPGraph.ExecutionMode.Jobified)]
+        [TestCase(DSPGraph.ExecutionMode.Synchronous)]
+        public void AfterUncheckedInterpolation_ParameterValueIsCorrect(DSPGraph.ExecutionMode executionMode)
+        {
+            var channelCount = 2;
+            var soundFormat = SoundFormat.Stereo;
+            var bufferSize = 100;
+            using (var graph = DSPGraph.Create(soundFormat, channelCount, bufferSize, 1000))
+            {
+                DSPNode node;
+                using (var block = graph.CreateCommandBlock())
+                {
+                    node = block.CreateDSPNode<TestSecondMix.Parameters, NoProviders, TestSecondMix>();
+                    block.AddOutletPort(node, channelCount);
+                    block.Connect(node, 0, graph.RootDSP, 0);
+
+                    block.SetFloat<TestSecondMix.Parameters, NoProviders, TestSecondMix>(node,
+                        TestSecondMix.Parameters.Parameter, TestSecondMix.ValueAfterFirstMix, bufferSize / 2);
+                }
+
+                // Parameter interpolation finishes without being read during the first mix
+                PumpGraph(in graph, channelCount, executionMode);
+                // Now we verify that the parameter value is correct
+                PumpGraph(in graph, channelCount, executionMode);
+
+                using (var block = graph.CreateCommandBlock())
+                    block.ReleaseDSPNode(node);
+            }
+        }
+
+        [Test]
+        public void AppendKey_AddsKey()
+        {
+            DSPNode node = default;
+            using (var setup = new GraphSetup((graphSetup, graph, block) =>
+            {
+                node = graphSetup
+                    .CreateDSPNode<SingleParameterKernel.Parameters, NoProviders, SingleParameterKernel>();
+            }))
+            {
+                setup.PumpGraph();
+
+                long dspClock = 42;
+                float4 value = 10.0f;
+
+                // Get copy of node with populated fields
+                node = setup.Graph.LookupNode(node.Handle);
+                var nodeParameters = node.Parameters;
+                var parameter = nodeParameters[(int)SingleParameterKernel.Parameters.Parameter];
+                var newKeyIndex = setup.Graph.AppendKey(parameter.KeyIndex, DSPParameterKey.NullIndex, dspClock, value);
+
+                Assert.AreNotEqual(DSPParameterKey.NullIndex, newKeyIndex);
+                var key = setup.Graph.ParameterKeys[newKeyIndex];
+                Assert.AreEqual(dspClock, key.DSPClock);
+                Assert.AreEqual(value[0], key.Value[0], 0.001f);
+                Assert.AreEqual(DSPParameterKey.NullIndex, key.NextKeyIndex);
+            }
+        }
+
+        [Test]
+        public void AppendMultipleKeys_ChainsKeys()
+        {
+            DSPNode node = default;
+            using (var setup = new GraphSetup((graphSetup, graph, block) =>
+            {
+                node = graphSetup
+                    .CreateDSPNode<SingleParameterKernel.Parameters, NoProviders, SingleParameterKernel>();
+            }))
+            {
+                setup.PumpGraph();
+
+                long dspClock = 42;
+                float4 value = 10.0f;
+
+                // Get copy of node with populated fields
+                node = setup.Graph.LookupNode(node.Handle);
+                var nodeParameters = node.Parameters;
+                var parameter = nodeParameters[(int)SingleParameterKernel.Parameters.Parameter];
+                var firstKeyIndex =
+                    setup.Graph.AppendKey(parameter.KeyIndex, DSPParameterKey.NullIndex, dspClock, value);
+                Assert.AreNotEqual(DSPParameterKey.NullIndex, firstKeyIndex);
+                var secondKeyIndex = setup.Graph.AppendKey(firstKeyIndex, firstKeyIndex, dspClock + 1, value + 1);
+                Assert.AreNotEqual(DSPParameterKey.NullIndex, secondKeyIndex);
+                Assert.AreNotEqual(firstKeyIndex, secondKeyIndex);
+
+                var key = setup.Graph.ParameterKeys[firstKeyIndex];
+                Assert.AreEqual(dspClock, key.DSPClock);
+                Assert.AreEqual(value[0], key.Value[0], 0.001f);
+                Assert.AreEqual(secondKeyIndex, key.NextKeyIndex);
+
+                key = setup.Graph.ParameterKeys[secondKeyIndex];
+                Assert.AreEqual(dspClock + 1, key.DSPClock);
+                Assert.AreEqual(value[0] + 1, key.Value[0], 0.001f);
+                Assert.AreEqual(DSPParameterKey.NullIndex, key.NextKeyIndex);
+            }
+        }
+
+        [Test]
+        public void GetLastKey_ReturnsExpectedKey()
+        {
+            DSPNode node = default;
+            using (var setup = new GraphSetup((graphSetup, graph, block) =>
+            {
+                node = graphSetup
+                    .CreateDSPNode<SingleParameterKernel.Parameters, NoProviders, SingleParameterKernel>();
+            }))
+            {
+                setup.PumpGraph();
+
+                long dspClock = 42;
+                float4 value = 10.0f;
+
+                // Get copy of node with populated fields
+                node = setup.Graph.LookupNode(node.Handle);
+                var parameter = node.Parameters[(int)SingleParameterKernel.Parameters.Parameter];
+                Assert.AreEqual(DSPParameterKey.NullIndex, setup.Graph.GetLastParameterKeyIndex(parameter.KeyIndex));
+
+                var firstKeyIndex =
+                    setup.Graph.AppendKey(parameter.KeyIndex, DSPParameterKey.NullIndex, dspClock, value);
+                Assert.AreNotEqual(DSPParameterKey.NullIndex, firstKeyIndex);
+                Assert.AreEqual(firstKeyIndex, setup.Graph.GetLastParameterKeyIndex(firstKeyIndex));
+
+                var secondKeyIndex = setup.Graph.AppendKey(firstKeyIndex, firstKeyIndex, dspClock + 1, value + 1);
+                Assert.AreNotEqual(DSPParameterKey.NullIndex, secondKeyIndex);
+                Assert.AreNotEqual(firstKeyIndex, secondKeyIndex);
+                Assert.AreEqual(secondKeyIndex, setup.Graph.GetLastParameterKeyIndex(firstKeyIndex));
+            }
+        }
+
+        [Test]
+        public void FreeKeys_ClearsKeys()
+        {
+            DSPNode node = default;
+            using (var setup = new GraphSetup((graphSetup, graph, block) =>
+            {
+                node = graphSetup
+                    .CreateDSPNode<SingleParameterKernel.Parameters, NoProviders, SingleParameterKernel>();
+            }))
+            {
+                setup.PumpGraph();
+
+                long dspClock = 42;
+                float4 value = 10.0f;
+
+                // Get copy of node with populated fields
+                node = setup.Graph.LookupNode(node.Handle);
+                var parameter = node.Parameters[(int)SingleParameterKernel.Parameters.Parameter];
+                Assert.AreEqual(DSPParameterKey.NullIndex, setup.Graph.GetLastParameterKeyIndex(parameter.KeyIndex));
+
+                var firstKeyIndex =
+                    setup.Graph.AppendKey(parameter.KeyIndex, DSPParameterKey.NullIndex, dspClock, value);
+                var secondKeyIndex = setup.Graph.AppendKey(firstKeyIndex, firstKeyIndex, dspClock + 1, value + 1);
+                Assert.AreEqual(secondKeyIndex, setup.Graph.GetLastParameterKeyIndex(firstKeyIndex));
+
+                Assert.AreEqual(DSPParameterKey.NullIndex, setup.Graph.FreeParameterKeys(firstKeyIndex));
+                Assert.AreEqual(DSPParameterKey.NullIndex, setup.Graph.GetLastParameterKeyIndex(firstKeyIndex));
+            }
+        }
+
+        struct SustainKernel : IAudioKernel<SustainKernel.Parameters, NoProviders>
+        {
+            public enum Parameters
+            {
+                [ParameterDefault(0.0f)] Parameter
+            }
+
+            public void Initialize()
+            {
+            }
+
+            public void Execute(ref ExecuteContext<Parameters, NoProviders> context)
+            {
+                for (int i = 0; i < 50; i++)
+                    Assert.AreEqual(i * 100.0 / 49.0, context.Parameters.GetFloat(Parameters.Parameter, i), 0.0001);
+
+                for (int i = 50; i < 75; i++)
+                    Assert.AreEqual(100.0f, context.Parameters.GetFloat(Parameters.Parameter, i), 0.0001);
+            }
+
+            public void Dispose()
+            {
+            }
+        }
+
+        [Test]
+        [TestCase(DSPGraph.ExecutionMode.Jobified)]
+        [TestCase(DSPGraph.ExecutionMode.Synchronous)]
+        public void SustainedParameter(DSPGraph.ExecutionMode executionMode)
+        {
+            var channelCount = 2;
+            var soundFormat = SoundFormat.Stereo;
+            using (var graph = DSPGraph.Create(soundFormat, channelCount, 100, 1000))
+            {
+                DSPNode node;
+                using (var block = graph.CreateCommandBlock())
+                {
+                    node = block.CreateDSPNode<SustainKernel.Parameters, NoProviders, SustainKernel>();
+                    block.AddOutletPort(node, channelCount);
+                    block.Connect(node, 0, graph.RootDSP, 0);
+
+                    block.AddFloatKey<SustainKernel.Parameters, NoProviders, SustainKernel>(node,
+                        SustainKernel.Parameters.Parameter, 49, 100.0f);
+                    block.SustainFloat<SustainKernel.Parameters, NoProviders, SustainKernel>(node,
+                        SustainKernel.Parameters.Parameter, 75);
+                    block.AddFloatKey<SustainKernel.Parameters, NoProviders, SustainKernel>(node,
+                        SustainKernel.Parameters.Parameter, 99, 0.0f);
+                }
+
+                PumpGraph(in graph, channelCount, executionMode);
+
+                using (var block = graph.CreateCommandBlock())
+                    block.ReleaseDSPNode(node);
+            }
         }
     }
 }

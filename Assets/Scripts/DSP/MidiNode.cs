@@ -8,7 +8,7 @@ using System;
 using Unity.Mathematics;
 using Unity.Collections.LowLevel.Unsafe;
 
-[BurstCompile]
+[BurstCompile(CompileSynchronously = true)]
 public struct MidiNode : IAudioKernel<MidiNode.Parameters, MidiNode.Providers>
 {
     public enum Parameters
@@ -42,12 +42,48 @@ public struct MidiNode : IAudioKernel<MidiNode.Parameters, MidiNode.Providers>
     {
         if (context.Outputs.Count != 3) return;
 
+        //SampleBuffer gatesOutput = context.Outputs.GetSampleBuffer(0);
+        //var gatesOutputBuffer = gatesOutput.Buffer;
+        //SampleBuffer notesOutput = context.Outputs.GetSampleBuffer(1);
+        //var notesOutputBuffer = notesOutput.Buffer;
+        //SampleBuffer triggerOutput = context.Outputs.GetSampleBuffer(2);
+        //var triggerOutputBuffer = triggerOutput.Buffer;
+
+        //while (true)
+        //{
+        //    ulong data = DequeueIncomingData();
+        //    if (data == 0) break;
+        //    MidiJack.MidiMessage message = new MidiJack.MidiMessage(data);
+        //    ProcessMessage(message);
+        //}
+
+        //float sampleDuration = 1.0f / context.SampleRate;
+        //int samplesCount = gatesOutput.Samples;
+        //for (int s = 0; s < samplesCount; ++s)
+        //{
+        //    for (int c = 0; c < math.min(16, gatesOutput.Channels); ++c)
+        //    {
+        //        gatesOutputBuffer[s * gatesOutput.Channels + c] = _Gates[c] ? 1.0f : 0.0f;
+        //    }
+
+        //    for (int c = 0; c < math.min(16, notesOutput.Channels); ++c)
+        //    {
+        //        notesOutputBuffer[s * notesOutput.Channels + c] = (_Notes[c] - 60f) / 12f;
+        //    }
+
+        //    for(int c=0; c<math.min(16, triggerOutput.Channels); ++c)
+        //    {
+        //        unsafe
+        //        {
+        //            PulseGenerator* retrigger = (PulseGenerator*)((byte*)_Retrigger.GetUnsafePtr() + UnsafeUtility.SizeOf<PulseGenerator>() * c);
+        //            triggerOutputBuffer[s * triggerOutput.Channels + c] = retrigger->Process(sampleDuration) ? 1.0f : 0.0f;
+        //        }
+        //    }
+        //}
+
         SampleBuffer gatesOutput = context.Outputs.GetSampleBuffer(0);
-        var gatesOutputBuffer = gatesOutput.Buffer;
         SampleBuffer notesOutput = context.Outputs.GetSampleBuffer(1);
-        var notesOutputBuffer = notesOutput.Buffer;
         SampleBuffer triggerOutput = context.Outputs.GetSampleBuffer(2);
-        var triggerOutputBuffer = triggerOutput.Buffer;
 
         while (true)
         {
@@ -59,24 +95,27 @@ public struct MidiNode : IAudioKernel<MidiNode.Parameters, MidiNode.Providers>
 
         float sampleDuration = 1.0f / context.SampleRate;
         int samplesCount = gatesOutput.Samples;
-        for (int s = 0; s < samplesCount; ++s)
+        int channelsCount = math.min(
+                math.min(gatesOutput.Channels, notesOutput.Channels),
+                math.min(triggerOutput.Channels, 16));
+        for (int c = 0; c < channelsCount; ++c)
         {
-            for (int c = 0; c < math.min(16, gatesOutput.Channels); ++c)
-            {
-                gatesOutputBuffer[s * gatesOutput.Channels + c] = _Gates[c] ? 1.0f : 0.0f;
-            }
+            var gatesOutputBuffer = gatesOutput.GetBuffer(c);
+            var notesOutputBuffer = notesOutput.GetBuffer(c);
+            var triggerOutputBuffer = triggerOutput.GetBuffer(c);
 
-            for (int c = 0; c < math.min(16, notesOutput.Channels); ++c)
-            {
-                notesOutputBuffer[s * notesOutput.Channels + c] = (_Notes[c] - 60f) / 12f;
-            }
+            float gatesVal = _Gates[c] ? 1.0f : 0.0f;
+            float notesVal = (_Notes[c] - 60f) / 12f;
 
-            for(int c=0; c<math.min(16, triggerOutput.Channels); ++c)
+            unsafe
             {
-                unsafe
+                UnsafeUtility.MemCpyReplicate(gatesOutputBuffer.GetUnsafePtr(), &gatesVal, sizeof(float), gatesOutputBuffer.Length);
+                UnsafeUtility.MemCpyReplicate(notesOutputBuffer.GetUnsafePtr(), &notesVal, sizeof(float), notesOutputBuffer.Length);
+
+                PulseGenerator* retrigger = (PulseGenerator*)((byte*)_Retrigger.GetUnsafePtr() + UnsafeUtility.SizeOf<PulseGenerator>() * c);
+                for (int s = 0; s < samplesCount; ++s)
                 {
-                    PulseGenerator* retrigger = (PulseGenerator*)((byte*)_Retrigger.GetUnsafePtr() + UnsafeUtility.SizeOf<PulseGenerator>() * c);
-                    triggerOutputBuffer[s * triggerOutput.Channels + c] = retrigger->Process(sampleDuration) ? 1.0f : 0.0f;
+                    triggerOutputBuffer[s] = retrigger->Process(sampleDuration) ? 1.0f : 0.0f;
                 }
             }
         }

@@ -1,67 +1,74 @@
 using System;
 using NUnit.Framework;
 using Unity.Collections;
-using Unity.Media.Utilities;
 
-unsafe class AtomicFreeLists
+namespace Unity.Media.Utilities.Tests.Runtime
 {
-    [Test]
-    [TestCase(AllocationMode.Ephemeral)]
-    [TestCase(AllocationMode.Pooled)]
-    public void CanAllocateFromEmptyList(AllocationMode allocationMode)
+    unsafe class AtomicFreeLists
     {
-        using (var list = new AtomicFreeList<AtomicNode>(allocationMode))
+        [Test]
+        [TestCase(AllocationMode.Ephemeral)]
+        [TestCase(AllocationMode.Pooled)]
+        public void CanAllocateFromEmptyList(AllocationMode allocationMode)
         {
-            var node = list.Acquire();
-            Assert.AreNotEqual(IntPtr.Zero, (IntPtr)node);
-            list.Release(node);
+            using (var list = new AtomicFreeList<AtomicNode>(allocationMode))
+            {
+                list.Acquire(out var node);
+                Assert.AreNotEqual(IntPtr.Zero, (IntPtr)node);
+                list.Release(node);
+            }
         }
-    }
 
-    [Test]
-    public void PooledList_ReusesAllocations()
-    {
-        using (var list = new AtomicFreeList<AtomicNode>(AllocationMode.Pooled))
+        [Test]
+        public void PooledList_ReusesAllocations()
         {
-            var node = list.Acquire();
-            list.Release(node);
+            using (var list = new AtomicFreeList<AtomicNode>(AllocationMode.Pooled))
+            {
+                list.Acquire(out var node);
+                list.Release(node);
+
+                // Prevent the underlying allocator from just handing us back the same pointer
+                var dummy = Utility.AllocateUnsafe<AtomicNode>(1, Allocator.TempJob);
+
+                Assert.True(list.Acquire(out var secondNode));
+                Assert.AreEqual((IntPtr)node, (IntPtr)secondNode);
+                list.Release(secondNode);
+                Utility.FreeUnsafe(dummy, Allocator.TempJob);
+            }
+        }
+
+        [Test]
+        public void PooledList_ReusesAllocations_WithSmallTypes()
+        {
+            using var list = new AtomicFreeList<int>(AllocationMode.Pooled);
+            list.Acquire(out var item);
+            list.Release(item);
 
             // Prevent the underlying allocator from just handing us back the same pointer
-            var dummy = Utility.AllocateUnsafe<AtomicNode>(1, Allocator.TempJob);
+            var dummy = Utility.AllocateUnsafe<int>(1, Allocator.TempJob);
 
-            var secondNode = list.Acquire();
-            Assert.AreEqual((IntPtr)node, (IntPtr)secondNode);
+            Assert.True(list.Acquire(out var secondNode));
+            Assert.AreEqual((IntPtr)item, (IntPtr)secondNode);
             list.Release(secondNode);
             Utility.FreeUnsafe(dummy, Allocator.TempJob);
         }
-    }
 
-    [Test]
-    public void EphemeralList_DoesNotReuseAllocations()
-    {
-        using (var list = new AtomicFreeList<AtomicNode>(AllocationMode.Ephemeral))
+        [Test]
+        public void EphemeralList_DoesNotReuseAllocations()
         {
-            var node = list.Acquire();
-            list.Release(node);
+            using (var list = new AtomicFreeList<AtomicNode>(AllocationMode.Ephemeral))
+            {
+                list.Acquire(out var node);
+                list.Release(node);
 
-            // Prevent the underlying allocator from just handing us back the same pointer
-            var dummy = Utility.AllocateUnsafe<AtomicNode>(1, Allocator.TempJob);
+                // Prevent the underlying allocator from just handing us back the same pointer
+                var dummy = Utility.AllocateUnsafe<AtomicNode>(1, Allocator.TempJob);
 
-            var secondNode = list.Acquire();
-            Assert.AreNotEqual((IntPtr)node, (IntPtr)secondNode);
-            list.Release(secondNode);
-            Utility.FreeUnsafe(dummy, Allocator.TempJob);
+                Assert.False(list.Acquire(out var secondNode));
+                Assert.AreNotEqual((IntPtr)node, (IntPtr)secondNode);
+                list.Release(secondNode);
+                Utility.FreeUnsafe(dummy, Allocator.TempJob);
+            }
         }
-    }
-
-    [Test]
-    [TestCase(AllocationMode.Ephemeral)]
-    [TestCase(AllocationMode.Pooled)]
-    public void DescriptionIsValidated(AllocationMode allocationMode)
-    {
-        Assert.Throws<ArgumentException>(() => AtomicFreeList<AtomicNode>.FromDescription(default));
-        // FIXME burst
-//        using (var list = new AtomicFreeList<AtomicNode>(allocationMode))
-//            Assert.Throws<ArgumentException>(() => AtomicFreeList<AtomicFreeListDescription>.FromDescription(list.Description));
     }
 }

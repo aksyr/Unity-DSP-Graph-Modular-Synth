@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Unity.Burst;
 using Unity.Collections;
@@ -12,12 +13,16 @@ namespace Unity.Audio
     /// </summary>
     public unsafe partial struct DSPGraph : IDisposable, IHandle<DSPGraph>
     {
+        /// <summary>
+        /// Whether this graph is valid
+        /// </summary>
         public bool Valid => Handle.Valid;
 
         /// <summary>
         /// An accessor for mixer thread operations.
-        /// Throws <see cref="InvalidOperationException"/>InvalidOperationException</see> if called from a thread that is not the mixer thread for this graph.
+        /// Throws InvalidOperationException if called from a thread that is not the mixer thread for this graph.
         /// </summary>
+        /// <exception cref="InvalidOperationException"></exception>
         public OutputMixerHandle OutputMixer
         {
             get
@@ -40,13 +45,12 @@ namespace Unity.Audio
             ValidateExecutionMode(executionMode);
 
             ProfilerMarkers.BeginMixMarker.Begin();
-            if (!m_RootNode.Valid || m_RootNode.Inputs.Count <= 0)
-                throw new InvalidOperationException("DSPGraph has not been initalized");
+            ValidateInitialState();
 
             SyncPreviousMix();
             ApplyScheduledCommands();
 
-            if (GraphTraversal.Count == 0)
+            if (m_GraphTraversal.Count == 0)
                 BuildTraversalCache(executionMode);
 
             *m_LastReadLength = frameCount;
@@ -70,12 +74,11 @@ namespace Unity.Audio
         public void ReadMix(NativeArray<float> buffer, int frameCount, int channelCount)
         {
             ValidateBufferSize(buffer, frameCount, channelCount);
-            if (frameCount != LastReadLength)
-                throw new InvalidOperationException($"Incompatible buffer passed to ReadMix, buffer of size {frameCount * channelCount} does not match previous read length {LastReadLength * channelCount}");
+            ValidateFrameCount(frameCount, channelCount);
 
             ProfilerMarkers.ReadMixMarker.Begin();
             SyncPreviousMix();
-            UnsafeUtility.MemCpy(buffer.GetUnsafePtr(), *(float**)m_RootBuffer.Data, frameCount * channelCount * UnsafeUtility.SizeOf<float>());
+            UnsafeUtility.MemCpy(buffer.GetUnsafePtr(), *RootBuffer.UnsafeDataPointer, frameCount * channelCount * UnsafeUtility.SizeOf<float>());
             ProfilerMarkers.ReadMixMarker.End();
         }
 
@@ -126,8 +129,6 @@ namespace Unity.Audio
                 throw new ArgumentOutOfRangeException(nameof(outputChannels), $"Invalid output channel count {outputChannels}");
             if (dspBufferSize <= 0)
                 throw new ArgumentOutOfRangeException(nameof(dspBufferSize), $"Invalid DSP buffer size {dspBufferSize}");
-            if ((dspBufferSize % outputChannels) != 0)
-                throw new ArgumentOutOfRangeException(nameof(dspBufferSize), "DSP buffer size must be a multiple of the channel count");
             if (sampleRate <= 0)
                 throw new ArgumentOutOfRangeException(nameof(sampleRate), $"Invalid sample rate {sampleRate}");
 
@@ -203,9 +204,9 @@ namespace Unity.Audio
             return RegisterNodeEventHandler<TNodeEvent>(GCHandle.Alloc(callbackWrapper));
         }
 
-        public delegate void NodeEventCallback(DSPNode node, void* nodeEventPointer);
+        internal delegate void NodeEventCallback(DSPNode node, void* nodeEventPointer);
 
-        internal struct NodeEventWrapper<TNodeEvent>
+        private readonly struct NodeEventWrapper<TNodeEvent>
             where TNodeEvent : unmanaged
         {
             private readonly Action<DSPNode, TNodeEvent> m_Callback;
@@ -236,12 +237,11 @@ namespace Unity.Audio
         /// </summary>
         public void Update()
         {
-            var nodesPendingDisposal = NodesPendingDisposal;
-            while (!nodesPendingDisposal.IsEmpty)
+            while (!m_NodesPendingDisposal.IsEmpty)
             {
-                DSPNode* node = nodesPendingDisposal.Dequeue();
+                DSPNode* node = m_NodesPendingDisposal.Dequeue();
                 RunDSPNodeDisposeJob(*node);
-                TemporaryNodeAllocator.Release(node);
+                m_TemporaryNodeAllocator.Release(node);
             }
             this.InvokePendingCallbacks();
         }
@@ -249,7 +249,7 @@ namespace Unity.Audio
         /// <summary>
         /// A container for mixer thread operations
         /// </summary>
-        public struct OutputMixerHandle
+        public readonly struct OutputMixerHandle
         {
             private readonly DSPGraph m_Graph;
 
@@ -284,21 +284,69 @@ namespace Unity.Audio
 
         private static void ValidateBufferSize(NativeArray<float> buffer, int frameCount, int channelCount)
         {
+            ValidateBufferSizeMono(buffer, frameCount, channelCount);
+            ValidateBufferSizeBurst(buffer, frameCount, channelCount);
+        }
+
+        [BurstDiscard]
+        private static void ValidateBufferSizeMono(NativeArray<float> buffer, int frameCount, int channelCount)
+        {
             if (frameCount * channelCount > buffer.Length)
                 throw new ArgumentOutOfRangeException($"Buffer of size {buffer.Length} is not large enough to read {frameCount} frames x {channelCount} channels");
         }
 
+        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        private static void ValidateBufferSizeBurst(NativeArray<float> buffer, int frameCount, int channelCount)
+        {
+            if (frameCount * channelCount > buffer.Length)
+                throw new ArgumentOutOfRangeException($"Buffer of size {buffer.Length} is not large enough to read {frameCount} frames x {channelCount} channels");
+        }
+
+        private void ValidateFrameCount(int frameCount, int channelCount)
+        {
+            ValidateFrameCountMono(frameCount, channelCount);
+            ValidateFrameCountBurst(frameCount, channelCount);
+        }
+
+        [BurstDiscard]
+        private void ValidateFrameCountMono(int frameCount, int channelCount)
+        {
+            if (frameCount != LastReadLength)
+                throw new InvalidOperationException($"Incompatible buffer passed to ReadMix, buffer of size {frameCount * channelCount} does not match previous read length {LastReadLength * channelCount}");
+        }
+
+        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        private void ValidateFrameCountBurst(int frameCount, int channelCount)
+        {
+            if (frameCount != LastReadLength)
+                throw new InvalidOperationException($"Incompatible buffer passed to ReadMix, buffer of size {frameCount * channelCount} does not match previous read length {LastReadLength * channelCount}");
+        }
+
+        /// <summary>
+        /// Whether this graph is the same as another instance
+        /// </summary>
+        /// <param name="other">The other instance to compare</param>
+        /// <returns></returns>
         public bool Equals(DSPGraph other)
         {
             return Handle.Equals(other.Handle);
         }
 
+        /// <summary>
+        /// Whether this graph is the same as another instance
+        /// </summary>
+        /// <param name="obj">The other instance to compare</param>
+        /// <returns></returns>
         public override bool Equals(object obj)
         {
             if (ReferenceEquals(null, obj)) return false;
             return obj is DSPGraph other && Equals(other);
         }
 
+        /// <summary>
+        /// Returns a unique hash for this graph
+        /// </summary>
+        /// <returns></returns>
         public override int GetHashCode()
         {
             return Handle.GetHashCode();

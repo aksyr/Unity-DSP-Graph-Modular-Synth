@@ -1,12 +1,10 @@
 {
     "name": "Unity.Audio.DSPGraph",
     "references": [
-        "Unity.Burst",
-        "Unity.Mathematics",
-        "Unity.Media.Core",
-        "Unity.Media.Utilities"
+        "GUID:2665a8d13d1b3f18800f46e256720795",
+        "GUID:d8b63aba1907145bea998dd612889d6b",
+        "GUID:b2b8b21845d8355448c429ddc59070aa"
     ],
-    "optionalUnityReferences": [],
     "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": true,
@@ -14,5 +12,6 @@
     "precompiledReferences": [],
     "autoReferenced": true,
     "defineConstraints": [],
-    "versionDefines": []
+    "versionDefines": [],
+    "noEngineReferences": false
 }

@@ -4,6 +4,45 @@ All notable changes to this package will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [0.1.0-preview.18] - 2021-02-10
+### Improvements
+- Refresh documentation
+### Changes
+- Bump burst dependency to 1.4.4
+- Minimum Unity version is now 2020.2
+
+## [0.1.0-preview.17] - 2020-11-16
+### Changes
+- Bump burst dependency to 1.4.1
+
+## [0.1.0-preview.16] - 2020-10-31
+### Changes
+- Bump version number after CI workarounds
+
+## [0.1.0-preview.15] - 2020-10-21
+### Changes
+- Bump burst dependency to 1.3.7
+
+## [0.1.0-preview.14] - 2020-10-05
+### Fixes
+- Fix incorrect exceptions for graphs whose buffer size isn't a multiple of the channel count
+- Don't show test and sample code in API documentation
+
+## [0.1.0-preview.13] - 2020-09-10
+### Changes
+- Update dependencies
+### Fixes
+- Fix uninitialized buffer access
+
+## [0.1.0-preview.12] - 2020-02-20
+### Changes
+- Migrate sample buffers to one buffer per channel
+- Update com.unity.media.utilities dependency to preview.4
+### Improvements
+- Remove some allocations caused by boxing
+### Fixes
+- Fix crash when using dspgraph and exiting unity via script
+
 ## [0.1.0-preview.11] - 2019-12-02
 ### Improvements
 - Fix playback in PlayClip sample

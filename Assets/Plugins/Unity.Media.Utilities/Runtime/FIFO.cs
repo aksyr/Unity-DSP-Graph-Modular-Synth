@@ -13,7 +13,7 @@ namespace Unity.Media.Utilities
             }
 
             const int StaticCount = 2;
-            
+
             internal Range a, b;
 
             public Range this[int i] => i == 0 ? a : b;
@@ -21,11 +21,11 @@ namespace Unity.Media.Utilities
             public int RangeCount => StaticCount;
             public int TotalCount => a.Count + b.Count;
         }
-        
+
         int _Start, _End, _FuturedWriteLen;
         int _Size;
         bool _Full;
-        
+
         public int FuturedWriteLength => _FuturedWriteLen;
         public int TotalLength => _Size;
 

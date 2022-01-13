@@ -25,10 +25,10 @@ MonoBehaviour:
         PublicKeyToken=null
       connections:
       - fieldName: MonoOutput
-        node: {fileID: 1841296675564199789}
+        node: {fileID: 4409193617564481604}
         reroutePoints: []
       - fieldName: MonoOutput
-        node: {fileID: 4409193617564481604}
+        node: {fileID: 1841296675564199789}
         reroutePoints: []
       _direction: 0
       _connectionType: 0
@@ -445,7 +445,7 @@ MonoBehaviour:
   m_Name: Midi Node Widget
   m_EditorClassIdentifier: 
   graph: {fileID: 11400000}
-  position: {x: -296, y: -1224}
+  position: {x: -232, y: -1224}
   ports:
     keys:
     - Gate

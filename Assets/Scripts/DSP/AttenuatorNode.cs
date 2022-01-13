@@ -6,7 +6,7 @@ using Unity.CodeEditor;
 using Unity.Burst;
 using Unity.Collections;
 
-[BurstCompile]
+[BurstCompile(CompileSynchronously = true)]
 public struct AttenuatorNode : IAudioKernel<AttenuatorNode.Parameters, AttenuatorNode.Providers>
 {
     public enum Parameters
@@ -25,18 +25,33 @@ public struct AttenuatorNode : IAudioKernel<AttenuatorNode.Parameters, Attenuato
     {
         if (context.Inputs.Count != 1 && context.Outputs.Count != 1) return;
 
+        //SampleBuffer input = context.Inputs.GetSampleBuffer(0);
+        //SampleBuffer output = context.Outputs.GetSampleBuffer(0);
+        //NativeArray<float> inputBuffer = input.Buffer;
+        //NativeArray<float> outputBuffer = output.Buffer;
+
+        //int channelsCount = math.min(input.Channels, output.Channels);
+        //for(int s=0; s<input.Samples; ++s)
+        //{
+        //    float multiplier = context.Parameters.GetFloat(Parameters.Multiplier, s);
+        //    for(int c=0; c<channelsCount; ++c)
+        //    {
+        //        outputBuffer[s * output.Channels + c] = inputBuffer[s * input.Channels + c] * multiplier;
+        //    }
+        //}
+
         SampleBuffer input = context.Inputs.GetSampleBuffer(0);
         SampleBuffer output = context.Outputs.GetSampleBuffer(0);
-        NativeArray<float> inputBuffer = input.Buffer;
-        NativeArray<float> outputBuffer = output.Buffer;
 
         int channelsCount = math.min(input.Channels, output.Channels);
-        for(int s=0; s<input.Samples; ++s)
+        for (int c = 0; c < channelsCount; ++c)
         {
-            float multiplier = context.Parameters.GetFloat(Parameters.Multiplier, s);
-            for(int c=0; c<channelsCount; ++c)
+            NativeArray<float> inputBuffer = input.GetBuffer(c);
+            NativeArray<float> outputBuffer = output.GetBuffer(c);
+
+            for (int s = 0; s < output.Samples; ++s)
             {
-                outputBuffer[s * output.Channels + c] = inputBuffer[s * input.Channels + c] * multiplier;
+                outputBuffer[s] = inputBuffer[s];
             }
         }
     }

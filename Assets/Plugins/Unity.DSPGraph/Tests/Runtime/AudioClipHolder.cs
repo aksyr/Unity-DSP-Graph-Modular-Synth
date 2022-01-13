@@ -1,6 +1,9 @@
 using UnityEngine;
 
-public class AudioClipHolder : MonoBehaviour
+namespace Unity.Audio.DSPGraphTests
 {
-    public AudioClip Clip;
+    public class AudioClipHolder : MonoBehaviour
+    {
+        public AudioClip Clip;
+    }
 }

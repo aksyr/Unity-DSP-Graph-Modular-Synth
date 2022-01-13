@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
@@ -19,6 +20,9 @@ namespace Unity.Audio
         private readonly DSPGraph m_Graph;
         private GrowableBuffer<IntPtr> m_Commands;
 
+        /// <summary>
+        /// Whether this command block is valid
+        /// </summary>
         public bool Valid => m_Handle.Valid && m_Graph.Valid;
 
         internal DSPCommandBlock(DSPGraph graph)
@@ -29,11 +33,11 @@ namespace Unity.Audio
         }
 
         /// <summary>
-        /// Method to create a new <typeparamref name="DSPNode"/> in the graph
+        /// Method to create a new <see cref="DSPNode"/> in the graph
         /// </summary>
         /// <remarks>
-        /// A kernel of type <typeparamref name="TAudioKernel"/> is created inside the graph.
-        /// A handle in the form of <typeparamref name="DSPNode"/> is returned
+        /// A kernel is created inside the graph.
+        /// A handle in the form of <see cref="DSPNode"/> is returned
         /// for controlling the kernel.
         /// The created kernel will be bursted if its implementation is decorated with BurstCompileAttribute
         /// </remarks>
@@ -175,7 +179,7 @@ namespace Unity.Audio
         }
 
         /// <summary>
-        /// This API will run the <see cref="TAudioKernelUpdate"/> on the target DSPNode asynchronously.
+        /// This API will run an update kernel on the target DSPNode asynchronously.
         /// </summary>
         /// <remarks>
         /// This version simply applies the update kernel to the specified DSP kernel.
@@ -212,11 +216,11 @@ namespace Unity.Audio
 
         /// <summary>
         /// This API will run the TAudioKernelUpdate on the target DSPNode asynchronously. Also returns
-        /// a <typeparamref name="DSPNodeUpdateRequest"/> that can be used to track the progress of
+        /// a <see cref="DSPNodeUpdateRequest{TAudioKernelUpdate,TParams,TProvs,TAudioKernel}"/> that can be used to track the progress of
         /// the update.
         /// </summary>
         /// <remarks>
-        /// The <typeparamref name="DSPNodeUpdateRequest"/> returned allow access to the update structure
+        /// The <see cref="DSPNodeUpdateRequest{TAudioKernelUpdate,TParams,TProvs,TAudioKernel}"/> returned allow access to the update structure
         /// after it has updated the DSP kernel. This can be used to retrieve information from the DSP kernel
         /// and process it on the main thread.
         /// </remarks>
@@ -302,8 +306,7 @@ namespace Unity.Audio
         /// <returns>Returns a DSPConnection object</returns>
         public DSPConnection Connect(DSPNode source, int outputPort, DSPNode destination, int inputPort)
         {
-            AssertSameGraph(source.Graph, "The block and output node passed must be from the same parent DSPGraph");
-            AssertSameGraph(destination.Graph, "The block and input node passed must be from the same parent DSPGraph");
+            AssertSameGraphAsNodePair(source, destination);
 
             var connection = new DSPConnection
             {
@@ -325,7 +328,7 @@ namespace Unity.Audio
         }
 
         /// <summary>
-        /// Disconnects 2 nodes based on the <typeparamref name="DSPConnection"/> handle.
+        /// Disconnects 2 nodes based on the <see cref="DSPConnection"/> handle.
         /// </summary>
         /// <param name="connection">The handle specifying the connection between 2 nodes</param>
         public void Disconnect(DSPConnection connection)
@@ -344,7 +347,7 @@ namespace Unity.Audio
         /// Removes connection between two nodes
         /// </summary>
         /// <remarks>
-        /// The <typeparamref name="DSPConnection"/> returned during the connection phase
+        /// The <see cref="DSPConnection"/> returned during the connection phase
         /// of the given relationship will also become invalid.
         /// </remarks>
         /// <param name="source">The source node for the connection</param>
@@ -353,8 +356,8 @@ namespace Unity.Audio
         /// <param name="inputPort">The index of the destination's input port</param>
         public void Disconnect(DSPNode source, int outputPort, DSPNode destination, int inputPort)
         {
-            AssertSameGraph(source.Graph, "The block and output node passed must be from the same parent DSPGraph");
-            AssertSameGraph(destination.Graph, "The block and input node passed must be from the same parent DSPGraph");
+            AssertSameGraphAsNodePair(source, destination);
+
             QueueCommand(new DisconnectCommand
             {
                 m_Type = DSPCommandType.Disconnect,
@@ -371,8 +374,8 @@ namespace Unity.Audio
         /// Sets the attenuation of a connection. Attenuation will be applied when the samples are routed to the next node through the associated connection
         /// </summary>
         /// <param name="connection">DSPConnection on which the attenuation is set</param>
-        /// <param name="value">Float value of the attenuation</param>
-        /// <param name="interpolationLength">UInt specifying the interpolation length</param>
+        /// <param name="value">The attenuation to be applied</param>
+        /// <param name="interpolationLength">The interpolation length in samples</param>
         public void SetAttenuation(DSPConnection connection, float value, int interpolationLength = 0)
         {
             AssertSameGraphAsConnection(connection);
@@ -388,6 +391,13 @@ namespace Unity.Audio
             });
         }
 
+        /// <summary>
+        /// Sets the attenuation of a connection. Attenuation will be applied when the samples are routed to the next node through the associated connection
+        /// </summary>
+        /// <param name="connection">DSPConnection on which the attenuation is set</param>
+        /// <param name="value1">Attenuation value to be applied to channel 0</param>
+        /// <param name="value2">Attenuation value to be applied to channel 1</param>
+        /// <param name="interpolationLength">The interpolation length in samples</param>
         public void SetAttenuation(DSPConnection connection, float value1, float value2, int interpolationLength = 0)
         {
             AssertSameGraphAsConnection(connection);
@@ -404,6 +414,14 @@ namespace Unity.Audio
             });
         }
 
+        /// <summary>
+        /// Sets the attenuation of a connection. Attenuation will be applied when the samples are routed to the next node through the associated connection
+        /// </summary>
+        /// <param name="connection">DSPConnection on which the attenuation is set</param>
+        /// <param name="value1">Attenuation value to be applied to channel 0</param>
+        /// <param name="value2">Attenuation value to be applied to channel 1</param>
+        /// <param name="value3">Attenuation value to be applied to channel 2</param>
+        /// <param name="interpolationLength">The interpolation length in samples</param>
         public void SetAttenuation(DSPConnection connection, float value1, float value2, float value3, int interpolationLength = 0)
         {
             AssertSameGraphAsConnection(connection);
@@ -421,6 +439,15 @@ namespace Unity.Audio
             });
         }
 
+        /// <summary>
+        /// Sets the attenuation of a connection. Attenuation will be applied when the samples are routed to the next node through the associated connection
+        /// </summary>
+        /// <param name="connection">DSPConnection on which the attenuation is set</param>
+        /// <param name="value1">Attenuation value to be applied to channel 0</param>
+        /// <param name="value2">Attenuation value to be applied to channel 1</param>
+        /// <param name="value3">Attenuation value to be applied to channel 2</param>
+        /// <param name="value4">Attenuation value to be applied to channel 3</param>
+        /// <param name="interpolationLength">The interpolation length in samples</param>
         public void SetAttenuation(DSPConnection connection, float value1, float value2, float value3, float value4, int interpolationLength = 0)
         {
             AssertSameGraphAsConnection(connection);
@@ -439,6 +466,13 @@ namespace Unity.Audio
             });
         }
 
+        /// <summary>
+        /// Sets the attenuation of a connection. Attenuation will be applied when the samples are routed to the next node through the associated connection
+        /// </summary>
+        /// <param name="connection">DSPConnection on which the attenuation is set</param>
+        /// <param name="value">Per-channel attenuation values</param>
+        /// <param name="dimension">The number of values in <paramref name="value"/></param>
+        /// <param name="interpolationLength">The interpolation length in samples</param>
         public void SetAttenuation(DSPConnection connection, float* value, byte dimension, int interpolationLength = 0)
         {
             AssertSameGraphAsConnection(connection);
@@ -482,6 +516,13 @@ namespace Unity.Audio
             });
         }
 
+        /// <summary>
+        /// Used to add attenuation value to a DSPConnection
+        /// </summary>
+        /// <param name="connection">DSPConnection to which attenuation is applied</param>
+        /// <param name="dspClock">Specifies the DSPClock time at which the attenuation value takes effect</param>
+        /// <param name="value1">Attenuation value to be applied to channel 0</param>
+        /// <param name="value2">Attenuation value to be applied to channel 1</param>
         public void AddAttenuationKey(DSPConnection connection, long dspClock, float value1, float value2)
         {
             AssertSameGraphAsConnection(connection);
@@ -498,6 +539,14 @@ namespace Unity.Audio
             });
         }
 
+        /// <summary>
+        /// Used to add attenuation value to a DSPConnection
+        /// </summary>
+        /// <param name="connection">DSPConnection to which attenuation is applied</param>
+        /// <param name="dspClock">Specifies the DSPClock time at which the attenuation value takes effect</param>
+        /// <param name="value1">Attenuation value to be applied to channel 0</param>
+        /// <param name="value2">Attenuation value to be applied to channel 1</param>
+        /// <param name="value3">Attenuation value to be applied to channel 2</param>
         public void AddAttenuationKey(DSPConnection connection, long dspClock, float value1, float value2, float value3)
         {
             AssertSameGraphAsConnection(connection);
@@ -515,6 +564,15 @@ namespace Unity.Audio
             });
         }
 
+        /// <summary>
+        /// Used to add attenuation value to a DSPConnection
+        /// </summary>
+        /// <param name="connection">DSPConnection to which attenuation is applied</param>
+        /// <param name="dspClock">Specifies the DSPClock time at which the attenuation value takes effect</param>
+        /// <param name="value1">Attenuation value to be applied to channel 0</param>
+        /// <param name="value2">Attenuation value to be applied to channel 1</param>
+        /// <param name="value3">Attenuation value to be applied to channel 2</param>
+        /// <param name="value4">Attenuation value to be applied to channel 3</param>
         public void AddAttenuationKey(DSPConnection connection, long dspClock, float value1, float value2, float value3, float value4)
         {
             AssertSameGraphAsConnection(connection);
@@ -533,6 +591,13 @@ namespace Unity.Audio
             });
         }
 
+        /// <summary>
+        /// Used to add attenuation value to a DSPConnection
+        /// </summary>
+        /// <param name="connection">DSPConnection to which attenuation is applied</param>
+        /// <param name="dspClock">Specifies the DSPClock time at which the attenuation value takes effect</param>
+        /// <param name="value">Per-channel attenuation values</param>
+        /// <param name="dimension">The number of values in <paramref name="value"/></param>
         public void AddAttenuationKey(DSPConnection connection, long dspClock, float* value, byte dimension)
         {
             AssertSameGraphAsConnection(connection);
@@ -575,8 +640,7 @@ namespace Unity.Audio
         /// </remarks>
         /// <param name="node">DSPNode specifying the Node on which the inlet is added</param>
         /// <param name="channelCount">Int specifying the number of channels</param>
-        /// <param name="format">SoundFormat which specified the speaker support</param>
-        public void AddInletPort(DSPNode node, int channelCount, SoundFormat format)
+        public void AddInletPort(DSPNode node, int channelCount)
         {
             AssertSameGraphAsNode(node);
             QueueCommand(new AddInletPortCommand
@@ -586,7 +650,6 @@ namespace Unity.Audio
                 m_Handle = m_Handle,
                 m_Node = node.Handle,
                 m_ChannelCount = channelCount,
-                m_Format = (int)format,
             });
         }
 
@@ -598,8 +661,7 @@ namespace Unity.Audio
         /// </remarks>
         /// <param name="node">DSPNode specifying the node on which the outlet is added</param>
         /// <param name="channelCount">Int specifying the number of channels in the port</param>
-        /// <param name="format">SoundFormat specifying the speaker support</param>
-        public void AddOutletPort(DSPNode node, int channelCount, SoundFormat format)
+        public void AddOutletPort(DSPNode node, int channelCount)
         {
             AssertSameGraphAsNode(node);
             QueueCommand(new AddOutletPortCommand
@@ -609,49 +671,6 @@ namespace Unity.Audio
                 m_Handle = m_Handle,
                 m_Node = node.Handle,
                 m_ChannelCount = channelCount,
-                m_Format = (int)format,
-            });
-        }
-
-        /// <summary>
-        /// Adds an inlet port to the node
-        /// </summary>
-        /// <remarks>
-        /// Ports are where signal flow comes into and out of the DSP kernel
-        /// </remarks>
-        /// <param name="node">DSPNode specifying the Node on which the inlet is added</param>
-        /// <param name="portIndex">Int specifying port index</param>
-        public void RemoveInletPort(DSPNode node, int portIndex)
-        {
-            AssertSameGraphAsNode(node);
-            QueueCommand(new RemoveInletPortCommand
-            {
-                m_Type = DSPCommandType.RemoveInletPort,
-                m_Graph = m_Graph,
-                m_Handle = m_Handle,
-                m_Node = node.Handle,
-                m_PortIndex = portIndex,
-            });
-        }
-
-        /// <summary>
-        /// Adds an outlet port to the node
-        /// </summary>
-        /// <remarks>
-        /// Ports are where signal flow comes into and out of the DSP kernel
-        /// </remarks>
-        /// <param name="node">DSPNode specifying the node on which the outlet is added</param>
-        /// <param name="portIndex">Int specifying port index</param>
-        public void RemoveOutletPort(DSPNode node, int portIndex)
-        {
-            AssertSameGraphAsNode(node);
-            QueueCommand(new RemoveOutletPortCommand
-            {
-                m_Type = DSPCommandType.RemoveOutletPort,
-                m_Graph = m_Graph,
-                m_Handle = m_Handle,
-                m_Node = node.Handle,
-                m_PortIndex = portIndex,
             });
         }
 
@@ -661,7 +680,7 @@ namespace Unity.Audio
         /// <remarks>
         /// The provider can be null to clear an existing entry.
         /// </remarks>
-        /// <param name="clip">The provider to be set on the specified <typeparamref name="DSPNode"/></param>
+        /// <param name="clip">The provider to be set on the specified <see cref="DSPNode"/></param>
         /// <param name="node">The node to set the audio sample provider on</param>
         /// <param name="item">The sample provider 'slot' that the given provider should be assigned to</param>
         /// <param name="index">The index into the array that the provider should be set. This is if the sample provider slot is an array.</param>
@@ -690,7 +709,7 @@ namespace Unity.Audio
         /// <remarks>
         /// The provider can be null to clear an existing entry.
         /// </remarks>
-        /// <param name="video">The provider to be set on the specified <typeparamref name="DSPNode"/></param>
+        /// <param name="video">The provider to be set on the specified <see cref="DSPNode"/></param>
         /// <param name="node">The node to set the audio sample provider on</param>
         /// <param name="item">The sample provider 'slot' that the given provider should be assigned to</param>
         /// <param name="index">The index into the array that the provider should be set. This is if the sample provider slot is an array.</param>
@@ -744,7 +763,7 @@ namespace Unity.Audio
         /// <summary>
         /// Inserts a sample provider to the list
         /// </summary>
-        /// <param name="clip">The provider to be inserted on the specified <typeparamref name="DSPNode"/></param>
+        /// <param name="clip">The provider to be inserted on the specified <see cref="DSPNode"/></param>
         /// <param name="node">The node to set the audio sample provider on</param>
         /// <param name="item">The sample provider 'slot' that the given provider should be inserted into</param>
         /// <param name="index">The index into the array that the provider should be set. This is if the sample provider slot is an array.</param>
@@ -755,7 +774,7 @@ namespace Unity.Audio
         /// <typeparam name="TParameters">Enum type of the parameters of the node</typeparam>
         /// <typeparam name="TProviders">Enum type of the sample providers of the node</typeparam>
         /// <typeparam name="TAudioKernel">The kernel type of the node</typeparam>
-        /// <exception cref="ArgumentNullException">If the passed <typeparamref name="AudioClip"/>is null</exception>
+        /// <exception cref="ArgumentNullException">If the passed <see cref="AudioClip"/>is null</exception>
         /// <exception cref="InvalidOperationException">If the passed index into the sample provider slot is invalid</exception>
         public void InsertSampleProvider<TParameters, TProviders, TAudioKernel>(
             AudioClip clip, DSPNode node, TProviders item, int index = -1,
@@ -773,7 +792,7 @@ namespace Unity.Audio
         /// <summary>
         /// Inserts a sample provider to the list
         /// </summary>
-        /// <param name="video">The provider to be inserted on the specified <typeparamref name="DSPNode"/></param>
+        /// <param name="video">The provider to be inserted on the specified <see cref="DSPNode"/></param>
         /// <param name="node">The node to set the audio sample provider on</param>
         /// <param name="item">The sample provider 'slot' that the given provider should be inserted into</param>
         /// <param name="index">The index into the array that the provider should be set. This is if the sample provider slot is an array.</param>
@@ -781,7 +800,7 @@ namespace Unity.Audio
         /// <typeparam name="TParameters">Enum type of the parameters of the node</typeparam>
         /// <typeparam name="TProviders">Enum type of the sample providers of the node</typeparam>
         /// <typeparam name="TAudioKernel">The kernel type of the node</typeparam>
-        /// <exception cref="ArgumentNullException">If the passed <typeparamref name="VideoPlayer"/>is null</exception>
+        /// <exception cref="ArgumentNullException">If the passed <see cref="VideoPlayer"/>is null</exception>
         /// <exception cref="InvalidOperationException">If the passed index into the sample provider slot is invalid</exception>
         public void InsertSampleProvider<TParameters, TProviders, TAudioKernel>(
             VideoPlayer video, DSPNode node, TProviders item, int index = -1, int trackIndex = 0)
@@ -826,9 +845,9 @@ namespace Unity.Audio
         }
 
         /// <summary>
-        /// Removes <typeparamref name="AudioSampleProvider"/> from the specified <typeparamref name="DSPNode"/>. If index is not passed or is -1 then it is removed from the last.
+        /// Removes <see cref="AudioSampleProvider"/> from the specified <see cref="DSPNode"/>. If index is not passed or is -1 then it is removed from the last.
         /// </summary>
-        /// <param name="node">The node to remove the <typeparamref name="AudioSampleProvider"/> from</param>
+        /// <param name="node">The node to remove the <see cref="AudioSampleProvider"/> from</param>
         /// <param name="item">The sample provider 'slot' that should have the sample provider removed from</param>
         /// <param name="index">The index into the array that the provider should be removed from. This is if the sample provider slot is an array.</param>
         /// <typeparam name="TParameters">Enum type of the parameters of the node</typeparam>
@@ -877,10 +896,12 @@ namespace Unity.Audio
                 m_Handle = m_Handle,
             });
             m_Graph.ScheduleCommandBuffer(m_Commands);
-            m_Commands.Dispose();
             m_Commands = default;
         }
 
+        /// <summary>
+        /// Cancels a DSPCommandBlock and disposes its internal resources
+        /// </summary>
         public void Cancel()
         {
             if (!m_Commands.Valid)
@@ -897,64 +918,147 @@ namespace Unity.Audio
             m_Graph.DisposeHandle(m_Handle);
         }
 
-        private void AssertSameGraph(Handle graph, string message)
-        {
-            if (!m_Graph.Handle.Equals(graph))
-                throw new ArgumentException(message);
-        }
-
         private void AssertSameGraphAsNode(DSPNode node)
         {
-            AssertSameGraph(node.Graph, "The block and node passed must be from the same parent DSPGraph");
+            AssertSameGraphAsNodeMono(node);
+            AssertSameGraphAsNodeBurst(node);
+        }
+
+        [BurstDiscard]
+        private void AssertSameGraphAsNodeMono(DSPNode node)
+        {
+            if (!node.Graph.Equals(m_Graph.Handle))
+                throw new ArgumentException("The block and node passed must be from the same parent DSPGraph");
+        }
+
+        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        private void AssertSameGraphAsNodeBurst(DSPNode node)
+        {
+            if (!node.Graph.Equals(m_Graph.Handle))
+                throw new ArgumentException("The block and node passed must be from the same parent DSPGraph");
         }
 
         private void AssertSameGraphAsConnection(DSPConnection connection)
         {
-            AssertSameGraph(connection.Graph, "The block and connection passed must be from the same parent DSPGraph");
+            AssertSameGraphAsConnectionMono(connection);
+            AssertSameGraphAsConnectionBurst(connection);
+        }
+
+        [BurstDiscard]
+        private void AssertSameGraphAsConnectionMono(DSPConnection connection)
+        {
+            if (!connection.Graph.Equals(m_Graph.Handle))
+                throw new ArgumentException("The block and connection passed must be from the same parent DSPGraph");
+        }
+
+        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        private void AssertSameGraphAsConnectionBurst(DSPConnection connection)
+        {
+            if (!connection.Graph.Equals(m_Graph.Handle))
+                throw new ArgumentException("The block and connection passed must be from the same parent DSPGraph");
+        }
+
+        private void AssertSameGraphAsNodePair(DSPNode source, DSPNode destination)
+        {
+            AssertSameGraphAsNodePairMono(source, destination);
+            AssertSameGraphAsNodePairBurst(source, destination);
+        }
+
+        [BurstDiscard]
+        private void AssertSameGraphAsNodePairMono(DSPNode source, DSPNode destination)
+        {
+            if (!source.Graph.Equals(m_Graph.Handle))
+                throw new ArgumentException("The block and output node passed must be from the same parent DSPGraph");
+            if (!destination.Graph.Equals(m_Graph.Handle))
+                throw new ArgumentException("The block and input node passed must be from the same parent DSPGraph");
+        }
+
+        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        private void AssertSameGraphAsNodePairBurst(DSPNode source, DSPNode destination)
+        {
+            if (!source.Graph.Equals(m_Graph.Handle))
+                throw new ArgumentException("The block and output node passed must be from the same parent DSPGraph");
+            if (!destination.Graph.Equals(m_Graph.Handle))
+                throw new ArgumentException("The block and input node passed must be from the same parent DSPGraph");
         }
 
         void QueueCommand<T>(T command)
             where T : unmanaged, IDSPCommand
         {
-            if (!m_Commands.Valid)
-                throw new InvalidOperationException("Command buffer has not been initialized");
+            ValidateCommandBuffer();
             var queueCommand = m_Graph.AllocateCommand<T>();
             *queueCommand = command;
             m_Commands.Add((IntPtr)queueCommand);
+        }
+
+        private void ValidateCommandBuffer()
+        {
+            ValidateCommandBufferMono();
+            ValidateCommandBufferBurst();
+        }
+
+        [BurstDiscard]
+        private void ValidateCommandBufferMono()
+        {
+            if (!m_Commands.Valid)
+                throw new InvalidOperationException("Command buffer has not been initialized");
+        }
+
+        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        private void ValidateCommandBufferBurst()
+        {
+            if (!m_Commands.Valid)
+                throw new InvalidOperationException("Command buffer has not been initialized");
         }
 
         private static int GetProviderIndex<T>(T provider, AudioKernelExtensions.SampleProviderDescriptionData sampleProviderDescriptionData)
             where T : unmanaged, Enum
         {
             var index = Convert.ToInt32(provider);
-            if (index < 0 || index >= sampleProviderDescriptionData.SampleProviderCount)
-                throw new ArgumentException($"Unknown sample provider {provider}");
+            Utility.ValidateIndex(index, sampleProviderDescriptionData.SampleProviderCount - 1);
             return index;
         }
 
         internal static int GetProviderIndex(int index, AudioKernelExtensions.SampleProviderDescriptionData sampleProviderDescriptionData)
         {
-            if (index < 0 || index >= sampleProviderDescriptionData.SampleProviderCount)
-                throw new ArgumentException($"Unknown sample provider {index}");
+            Utility.ValidateIndex(index, sampleProviderDescriptionData.SampleProviderCount - 1);
             return index;
         }
 
+        /// <summary>
+        /// Completes a DSPCommandBlock and disposes its internal resources
+        /// </summary>
+        /// <see cref="Complete"/>
         public void Dispose()
         {
             Complete();
         }
 
+        /// <summary>
+        /// Whether this command block is the same as another instance
+        /// </summary>
+        /// <param name="other">The other instance to compare</param>
+        /// <returns></returns>
         public bool Equals(DSPCommandBlock other)
         {
             return m_Handle.Equals(other.m_Handle) && m_Graph.Equals(other.m_Graph);
         }
 
+        /// <summary>
+        /// Whether this command block is the same as another instance
+        /// </summary>
+        /// <param name="obj">The other instance to compare</param>
+        /// <returns></returns>
         public override bool Equals(object obj)
         {
             if (ReferenceEquals(null, obj)) return false;
             return obj is DSPCommandBlock other && Equals(other);
         }
 
+        /// <summary>
+        /// Returns a unique hash code for this command block
+        /// </summary>
+        /// <returns></returns>
         public override int GetHashCode()
         {
             unchecked

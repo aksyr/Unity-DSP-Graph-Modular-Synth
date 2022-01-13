@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
@@ -8,7 +9,7 @@ using Unity.Collections.LowLevel.Unsafe;
 namespace Unity.Media.Utilities
 {
     /// <summary>
-    /// A List<T>-like blittable data structure backed by native allocations
+    /// A List&lt;T&gt;-like blittable data structure backed by native allocations
     /// </summary>
     /// <typeparam name="T">The element type</typeparam>
     public unsafe struct GrowableBuffer<T>: IDisposable, IEquatable<GrowableBuffer<T>>, IReadOnlyList<T>, IList<T>, IValidatable
@@ -23,26 +24,9 @@ namespace Unity.Media.Utilities
         private readonly Allocator m_Allocator;
 
         /// <summary>
-        /// Gets the unmanaged description for the GrowableBuffer
+        /// Get a pointer to the buffer data
         /// </summary>
-        public GrowableBufferDescription Description
-        {
-            get
-            {
-                Validate();
-                return new GrowableBufferDescription
-                {
-                    Allocator = m_Allocator,
-                    Data = m_Array,
-                    ElementTypeHash = UnsafeUtility.SizeOf<T>(),
-                };
-            }
-        }
-
-        /// <summary>
-        /// Get the pointer to the start of the buffer data
-        /// </summary>
-        public T* UnsafeDataPointer => *m_Array;
+        public T** UnsafeDataPointer => m_Array;
 
         /// <summary>
         /// Create a new GrowableBuffer
@@ -52,8 +36,7 @@ namespace Unity.Media.Utilities
         /// <exception cref="ArgumentOutOfRangeException">If initialCapacity &lt;= 0</exception>
         public GrowableBuffer(Allocator allocator, int initialCapacity = 16)
         {
-            if (initialCapacity <= 0)
-                throw new ArgumentOutOfRangeException(nameof(initialCapacity));
+            VerifyInitialCapacity(initialCapacity);
             m_Allocator = allocator;
             m_Array = (T**)Utility.AllocateUnsafe<IntPtr>(3, allocator);
             m_Count = (int*)(m_Array + 1);
@@ -108,64 +91,68 @@ namespace Unity.Media.Utilities
             m_Capacity = (int*)(array + 2);
         }
 
-        /// <summary>
-        /// Inflate a GrowableBuffer from an unmanaged description
-        /// </summary>
-        /// <param name="description">A description created by calling GrowableBuffer<T>.Description</param>
-        /// <returns>A GrowableBuffer inflated from the provided description</returns>
-        public static GrowableBuffer<T> FromDescription(GrowableBufferDescription description)
-        {
-            ValidateDescription(description);
-            return new GrowableBuffer<T>(description.Allocator, (T**)description.Data);
-        }
-
-        private static void ValidateDescription(GrowableBufferDescription description)
-        {
-            ValidateDescriptionWithMeaningfulMessages(description);
-            if (description.Data == null || description.Allocator == Allocator.Invalid || description.Allocator == Allocator.None)
-                throw new ArgumentException("description");
-        }
-
-        [BurstDiscard]
-        private static void ValidateDescriptionWithMeaningfulMessages(GrowableBufferDescription description)
-        {
-            if (description.Data == null || description.Allocator == Allocator.Invalid || description.Allocator == Allocator.None)
-                throw new ArgumentException(nameof(description));
-        }
-
         // Interface implementations
+        /// <summary>
+        /// Dispose buffer storage
+        /// </summary>
         public void Dispose()
         {
-            Validate();
+            this.Validate();
             Utility.FreeUnsafe(*m_Array, m_Allocator);
             Utility.FreeUnsafe(m_Array, m_Allocator);
         }
 
+        /// <summary>
+        /// See System.Collections.Generic.IEnumerable<T>
+        /// </summary>
+        /// <returns></returns>
         public IEnumerator<T> GetEnumerator()
         {
             return new Enumerator(ref this);
         }
 
+        /// <summary>
+        /// See System.Collections.IEnumerable
+        /// </summary>
+        /// <returns></returns>
         IEnumerator IEnumerable.GetEnumerator()
         {
             return GetEnumerator();
         }
 
+        /// <summary>
+        /// Whether this is the same buffer as another instance
+        /// </summary>
+        /// <param name="other">The other instance to compare</param>
+        /// <returns></returns>
         public bool Equals(GrowableBuffer<T> other)
         {
             return m_Array == other.m_Array;
         }
 
+        /// <summary>
+        /// Whether this is the same buffer as another instance
+        /// </summary>
+        /// <param name="obj">The other instance to compare</param>
+        /// <returns></returns>
         public override bool Equals(object obj)
         {
             return obj is GrowableBuffer<T> other && Equals(other);
         }
 
+        /// <summary>
+        /// Returns a unique hash code for this buffer
+        /// </summary>
+        /// <returns></returns>
         public override int GetHashCode()
         {
             return (int)m_Array;
         }
 
+        /// <summary>
+        /// Append an item to the end of the buffer
+        /// </summary>
+        /// <param name="item">The item to add</param>
         public void Add(T item)
         {
             CheckCapacity(*m_Count + 1);
@@ -173,13 +160,34 @@ namespace Unity.Media.Utilities
             ++*m_Count;
         }
 
+        /// <summary>
+        /// Append a list of items to the end of the buffer
+        /// </summary>
+        /// <param name="items">The items to add</param>
+        /// <typeparam name="TList">An unmanaged IList<T> implementation</typeparam>
+        public void AddRange<TList>(TList items)
+            where TList : unmanaged, IList<T>
+        {
+            CheckCapacity(*m_Count + items.Count);
+            for (int i = 0; i < items.Count; ++i)
+                Add(items[i]);
+        }
+
+        /// <summary>
+        /// Append a list of items to the end of the buffer
+        /// </summary>
+        /// <param name="items">The items to add</param>
         public void AddRange(IList<T> items)
         {
             CheckCapacity(*m_Count + items.Count);
-            foreach (var item in items)
-                Add(item);
+            for (int i = 0; i < items.Count; ++i)
+                Add(items[i]);
         }
 
+        /// <summary>
+        /// Append a group of items to the end of the buffer
+        /// </summary>
+        /// <param name="items">The items to add</param>
         public void AddRange(IEnumerable<T> items)
         {
             // Prechecking capacity requires us to iterate items twice - worth it?
@@ -187,20 +195,34 @@ namespace Unity.Media.Utilities
                 Add(item);
         }
 
+        /// <summary>
+        /// Mark the buffer as empty
+        /// </summary>
+        /// <remarks>This does not trigger deallocation</remarks>
         public void Clear()
         {
             *m_Count = 0;
         }
 
+        /// <summary>
+        /// Whether a given item is contained in the buffer
+        /// </summary>
+        /// <param name="item">The item to find</param>
+        /// <returns></returns>
         public bool Contains(T item)
         {
             return IndexOf(item) >= 0;
         }
 
+        /// <summary>
+        /// Copy the buffer to an array
+        /// </summary>
+        /// <param name="array">The destination array</param>
+        /// <param name="arrayIndex">The array index at which to begin writing</param>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown when there is insufficient space in the array, considering <paramref name="arrayIndex"/></exception>
         public void CopyTo(T[] array, int arrayIndex)
         {
-            if (arrayIndex < 0 || arrayIndex + *m_Count > array.Length)
-                throw new ArgumentOutOfRangeException(nameof(arrayIndex));
+            ValidateCopyArguments(array, arrayIndex);
 
             fixed(T* buffer = array)
             {
@@ -208,6 +230,31 @@ namespace Unity.Media.Utilities
             }
         }
 
+        private void ValidateCopyArguments(T[] array, int arrayIndex)
+        {
+            ValidateCopyArgumentsMono(array, arrayIndex);
+            ValidateCopyArgumentsBurst(array, arrayIndex);
+        }
+
+        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        private void ValidateCopyArgumentsBurst(T[] array, int arrayIndex)
+        {
+            if (arrayIndex < 0 || arrayIndex + *m_Count > array.Length)
+                throw new ArgumentOutOfRangeException(nameof(arrayIndex));
+        }
+
+        [BurstDiscard]
+        private void ValidateCopyArgumentsMono(T[] array, int arrayIndex)
+        {
+            if (arrayIndex < 0 || arrayIndex + *m_Count > array.Length)
+                throw new ArgumentOutOfRangeException(nameof(arrayIndex));
+        }
+
+        /// <summary>
+        /// Remove an item from the buffer
+        /// </summary>
+        /// <param name="item">The item to remove</param>
+        /// <returns>Whether the item was removed from the buffer</returns>
         public bool Remove(T item)
         {
             int index = IndexOf(item);
@@ -217,38 +264,56 @@ namespace Unity.Media.Utilities
             return true;
         }
 
+        /// <summary>
+        /// The number of items in the buffer
+        /// </summary>
+        /// <remarks><seealso cref="Capacity"/></remarks>
         public int Count
         {
             get
             {
-                Validate();
+                this.Validate();
                 return *m_Count;
             }
         }
 
+        /// <summary>
+        /// Whether the buffer is read-only
+        /// </summary>
         public bool IsReadOnly => false;
 
+        /// <summary>
+        /// Find an item in the buffer
+        /// </summary>
+        /// <param name="item">The item to be found</param>
+        /// <returns>The index of the found item, or -1</returns>
         public int IndexOf(T item)
         {
-#if ENABLE_IL2CPP
-            // This version works with il2cpp but not burst
-            for (int index = 0; index < *m_Count; ++index)
-                if (item.Equals((*m_Array)[index]))
-                    return index;
-#else
-            // This version works with burst but not il2cpp
-            // https://github.cds.internal.unity3d.com/unity/il2cpp/issues/733
             var hash = item.GetHashCode();
             for (int index = 0; index < *m_Count; ++index)
-                if (hash == (*m_Array)[index].GetHashCode())
+            {
+                // Assigning a reference to the item here to work around
+                // https://github.cds.internal.unity3d.com/unity/il2cpp/issues/733
+                ref T thing = ref (*m_Array)[index];
+                if (hash == thing.GetHashCode())
                     return index;
-#endif
+            }
+
             return -1;
         }
 
+        /// <summary>
+        /// Insert an item into the buffer
+        /// </summary>
+        /// <param name="index">The position at which to insert the item</param>
+        /// <param name="item">The item to insert</param>
+        /// <remarks>
+        /// <see cref="GrowableBuffer{T}.Count"/> can be provided as the index, in which case it will act like <see cref="GrowableBuffer{T}.Add"/>
+        /// </remarks>
+        /// <exception cref="IndexOutOfRangeException">Thrown when <paramref name="index"/> is out of range</exception>
         public void Insert(int index, T item)
         {
-            ValidateIndex(index);
+            ValidateIndexForInsertion(index);
             CheckCapacity(*m_Count + 1);
             for (int i = *m_Count - 1; i >= index; --i)
                 (*m_Array)[i + 1] = (*m_Array)[i];
@@ -256,12 +321,53 @@ namespace Unity.Media.Utilities
             ++*m_Count;
         }
 
-        private void ValidateIndex(int index)
+        // We specifically want to support inserting to index *m_Count here,
+        // giving the same result as calling Add()
+        private void ValidateIndexForInsertion(int index)
+        {
+            ValidateIndexForInsertionMono(index);
+            ValidateIndexForInsertionBurst(index);
+        }
+
+        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        private void ValidateIndexForInsertionBurst(int index)
         {
             if (index < 0 || index > *m_Count)
                 throw new IndexOutOfRangeException();
         }
 
+        [BurstDiscard]
+        private void ValidateIndexForInsertionMono(int index)
+        {
+            if (index < 0 || index > *m_Count)
+                throw new IndexOutOfRangeException();
+        }
+
+        private void ValidateIndex(int index)
+        {
+            ValidateIndexMono(index);
+            ValidateIndexBurst(index);
+        }
+
+        [BurstDiscard]
+        private void ValidateIndexMono(int index)
+        {
+            if ((uint)index >= *m_Count)
+                throw new IndexOutOfRangeException($"Index is out of range of size {*m_Count}");
+        }
+
+        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        private void ValidateIndexBurst(int index)
+        {
+            if ((uint)index >= *m_Count)
+                throw new IndexOutOfRangeException($"Index is out of range of size {*m_Count}");
+        }
+
+        /// <summary>
+        /// Remove the item at <paramref name="index"/>
+        /// </summary>
+        /// <param name="index">The index of the item to remove</param>
+        /// <exception cref="IndexOutOfRangeException">Thrown when <paramref name="index"/> is out of range</exception>
         public void RemoveAt(int index)
         {
             ValidateIndex(index);
@@ -270,29 +376,31 @@ namespace Unity.Media.Utilities
             --*m_Count;
         }
 
+        /// <summary>
+        /// Get an item in the buffer
+        /// </summary>
+        /// <param name="index">The index of the item to retrieve</param>
+        /// <exception cref="IndexOutOfRangeException">Thrown when <paramref name="index"/> is out of range</exception>
         public T this[int index]
         {
             get
             {
-                Validate();
+                this.Validate();
                 ValidateIndex(index);
                 return (*m_Array)[index];
             }
             set
             {
-                Validate();
+                this.Validate();
                 ValidateIndex(index);
                 (*m_Array)[index] = value;
             }
         }
 
+        /// <summary>
+        /// Whether the buffer is valid
+        /// </summary>
         public bool Valid => m_Array != null;
-
-        private void Validate()
-        {
-            if (!Valid)
-                throw new InvalidOperationException();
-        }
 
         /// <summary>
         /// Ensure that the buffer has at least the given capacity
@@ -309,13 +417,37 @@ namespace Unity.Media.Utilities
             *m_Array = newArray;
         }
 
+        /// <summary>
+        /// The allocated capacity of the buffer
+        /// </summary>
+        /// <remarks><seealso cref="Count"/></remarks>
         public int Capacity
         {
             get
             {
-                Validate();
+                this.Validate();
                 return *m_Capacity;
             }
+        }
+
+        static void VerifyInitialCapacity(int initialCapacity)
+        {
+            VerifyInitialCapacityMono(initialCapacity);
+            VerifyInitialCapacityBurst(initialCapacity);
+        }
+
+        [BurstDiscard]
+        static void VerifyInitialCapacityMono(int initialCapacity)
+        {
+            if (initialCapacity <= 0)
+                throw new ArgumentOutOfRangeException(nameof(initialCapacity));
+        }
+
+        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        static void VerifyInitialCapacityBurst(int initialCapacity)
+        {
+            if (initialCapacity <= 0)
+                throw new ArgumentOutOfRangeException(nameof(initialCapacity));
         }
 
         private struct Enumerator : IEnumerator<T>
@@ -349,16 +481,5 @@ namespace Unity.Media.Utilities
 
             object IEnumerator.Current => Current;
         }
-    }
-
-    /// <summary>
-    /// An unmanaged data structure meant to describe a GrowableBuffer<T>
-    /// </summary>
-    public unsafe struct GrowableBufferDescription
-    {
-        [NativeDisableUnsafePtrRestriction]
-        public void* Data;
-        public long ElementTypeHash;
-        public Allocator Allocator;
     }
 }

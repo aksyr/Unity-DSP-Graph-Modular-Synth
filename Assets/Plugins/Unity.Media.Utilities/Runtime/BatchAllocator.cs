@@ -1,4 +1,6 @@
 using System;
+using System.Diagnostics;
+using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Media.Utilities;
@@ -22,6 +24,11 @@ namespace Unity.Media.Utilities
         /// Returns a pointer to the base allocation, once allocation has occurred
         /// </summary>
         public void* AllocationRoot { get; private set; }
+
+        /// <summary>
+        /// The total allocation size, including padding for alignment
+        /// </summary>
+        public int TotalSize => m_TotalSize;
 
         /// <summary>
         /// Create a new BatchAllocator
@@ -50,9 +57,7 @@ namespace Unity.Media.Utilities
         public void Allocate<T>(int count, T** result)
             where T : unmanaged
         {
-            if (result == null)
-                throw new ArgumentNullException("result");
-
+            ValidateAllocationResult(result);
             *result = null;
             if (count == 0)
                 return;
@@ -72,6 +77,26 @@ namespace Unity.Media.Utilities
                 Offset = alignedOffset,
             });
             m_CurrentOffset += size;
+        }
+
+        private void ValidateAllocationResult(void* result)
+        {
+            ValidateAllocationResultMono(result);
+            ValidateAllocationResultBurst(result);
+        }
+
+        [BurstDiscard]
+        private void ValidateAllocationResultMono(void* result)
+        {
+            if (result == null)
+                throw new ArgumentNullException("result");
+        }
+
+        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        private void ValidateAllocationResultBurst(void* result)
+        {
+            if (result == null)
+                throw new ArgumentNullException("result");
         }
 
         /// <summary>

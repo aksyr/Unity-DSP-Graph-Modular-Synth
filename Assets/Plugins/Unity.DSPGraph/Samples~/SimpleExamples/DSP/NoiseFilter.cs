@@ -1,15 +1,14 @@
-using System;
 using Unity.Burst;
 using Random = Unity.Mathematics.Random;
 
-namespace Unity.Audio
+namespace Unity.Audio.DSPGraphSamples
 {
     [BurstCompile(CompileSynchronously = true)]
     public struct NoiseFilter : IAudioKernel<NoiseFilter.Parameters, NoiseFilter.Providers>
     {
         public enum Parameters
         {
-            [ParameterDefault(0.0f)] [ParameterRange(-1.0f, 1.0f)]
+            [ParameterDefault(0.0f)][ParameterRange(-1.0f, 1.0f)]
             Offset
         }
 
@@ -31,23 +30,23 @@ namespace Unity.Audio
             if (m_Random.state == 0)
                 m_Random.InitState(2747636419u);
 
-            var outputBuffer = context.Outputs.GetSampleBuffer(0).Buffer;
-            var outputChannels = context.Outputs.GetSampleBuffer(0).Channels;
-
-            var inputCount = context.Inputs.Count;
-            for (var i = 0; i < inputCount; i++)
-            {
-                var inputBuff = context.Inputs.GetSampleBuffer(i).Buffer;
-                for (var s = 0; s < outputBuffer.Length; s++)
-                    outputBuffer[s] += inputBuff[s];
-            }
-
-            var frames = outputBuffer.Length / outputChannels;
+            var outputSampleBuffer = context.Outputs.GetSampleBuffer(0);
+            var outputChannels = outputSampleBuffer.Channels;
             var parameters = context.Parameters;
-            for (int s = 0, i = 0; s < frames; s++)
+            var inputCount = context.Inputs.Count;
+
+            for (var channel = 0; channel < outputChannels; ++channel)
             {
-                for (var c = 0; c < outputChannels; c++)
-                    outputBuffer[i++] += m_Random.NextFloat() * 2.0f - 1.0f + parameters.GetFloat(Parameters.Offset, s);
+                var outputBuffer = outputSampleBuffer.GetBuffer(channel);
+                for (var i = 0; i < inputCount; i++)
+                {
+                    var inputBuff = context.Inputs.GetSampleBuffer(i).GetBuffer(channel);
+                    for (var s = 0; s < outputBuffer.Length; s++)
+                        outputBuffer[s] += inputBuff[s];
+                }
+
+                for (var s = 0; s < outputBuffer.Length; s++)
+                    outputBuffer[s] += m_Random.NextFloat() * 2.0f - 1.0f + parameters.GetFloat(Parameters.Offset, s);
             }
         }
 

@@ -16,10 +16,13 @@ public class DSPGraphContainer : MonoBehaviour
 
     void Awake()
     {
-        AudioConfiguration audioConfig = AudioSettings.GetConfiguration();
-        Debug.LogFormat("BufferSize={0} SampleRate={1}", audioConfig.dspBufferSize, audioConfig.sampleRate);
+        var format = ChannelEnumConverter.GetSoundFormatFromSpeakerMode(AudioSettings.speakerMode);
+        var channels = ChannelEnumConverter.GetChannelCountFromSoundFormat(format);
+        AudioSettings.GetDSPBufferSize(out var bufferLength, out var numBuffers);
+        var sampleRate = AudioSettings.outputSampleRate;
+        Debug.LogFormat("Format={2} Channels={3} BufferLength={0} SampleRate={1}", bufferLength, sampleRate, format, channels);
 
-        _Graph = DSPGraph.Create(SoundFormat.Stereo, 2, audioConfig.dspBufferSize, audioConfig.sampleRate);
+        _Graph = DSPGraph.Create(format, channels, bufferLength, sampleRate);
         _Driver = new MyAudioDriver { Graph = _Graph };
         _OutputHandle = _Driver.AttachToDefaultOutput();
 

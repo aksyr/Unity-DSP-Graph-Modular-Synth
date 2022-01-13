@@ -1,10 +1,11 @@
 using System;
+using System.Diagnostics;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using UnityEngine;
 
-namespace Unity.Audio
+namespace Unity.Audio.DSPGraphSamples
 {
     public struct StateVariableFilter
     {
@@ -22,10 +23,10 @@ namespace Unity.Audio
         public static DSPNode Create(DSPCommandBlock block, FilterType type)
         {
             var node = block.CreateDSPNode<AudioKernel.Parameters, AudioKernel.Providers, AudioKernel>();
-            block.AddInletPort(node, 2, SoundFormat.Stereo);
-            block.AddOutletPort(node, 2, SoundFormat.Stereo);
+            block.AddInletPort(node, 2);
+            block.AddOutletPort(node, 2);
             block.SetFloat<AudioKernel.Parameters, AudioKernel.Providers, AudioKernel>(node,
-                AudioKernel.Parameters.FilterType, (float) type);
+                AudioKernel.Parameters.FilterType, (float)type);
 
             return node;
         }
@@ -129,8 +130,27 @@ namespace Unity.Audio
                 case FilterType.Lowshelf: return DesignLowshelf(normalizedFrequency, Q, linearGain);
                 case FilterType.Highshelf: return DesignHighshelf(normalizedFrequency, Q, linearGain);
                 default:
-                    throw new ArgumentException("Unknown filter type", nameof(type));
+                    ThrowUnknownFilterTypeError(type);
+                    return default;
             }
+        }
+
+        private static void ThrowUnknownFilterTypeError(FilterType type)
+        {
+            ThrowUnknownFilterTypeErrorMono(type);
+            ThrowUnknownFilterTypeErrorBurst(type);
+        }
+
+        [BurstDiscard]
+        private static void ThrowUnknownFilterTypeErrorMono(FilterType type)
+        {
+            throw new ArgumentException("Unknown filter type", nameof(type));
+        }
+
+        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        private static void ThrowUnknownFilterTypeErrorBurst(FilterType type)
+        {
+            throw new ArgumentException("Unknown filter type", nameof(type));
         }
 
         static Coefficients Design(FilterType filterType, float cutoff, float Q, float gainInDBs, float sampleRate)
@@ -153,7 +173,8 @@ namespace Unity.Audio
                 case FilterType.Highshelf:
                     return DesignHighshelf(cutoff / sampleRate, Q, linearGain);
                 default:
-                    throw new ArgumentException("Unknown filter type", nameof(filterType));
+                    ThrowUnknownFilterTypeError(filterType);
+                    return default;
             }
         }
 
@@ -170,18 +191,18 @@ namespace Unity.Audio
 
             public enum Parameters
             {
-                [ParameterDefault((float) StateVariableFilter.FilterType.Lowpass)]
-                [ParameterRange((float) StateVariableFilter.FilterType.Lowpass,
-                    (float) StateVariableFilter.FilterType.Highshelf)]
+                [ParameterDefault((float)StateVariableFilter.FilterType.Lowpass)]
+                [ParameterRange((float)StateVariableFilter.FilterType.Lowpass,
+                    (float)StateVariableFilter.FilterType.Highshelf)]
                 FilterType,
 
-                [ParameterDefault(5000.0f)] [ParameterRange(10.0f, 22000.0f)]
+                [ParameterDefault(5000.0f)][ParameterRange(10.0f, 22000.0f)]
                 Cutoff,
 
-                [ParameterDefault(1.0f)] [ParameterRange(1.0f, 100.0f)]
+                [ParameterDefault(1.0f)][ParameterRange(1.0f, 100.0f)]
                 Q,
 
-                [ParameterDefault(0.0f)] [ParameterRange(-80.0f, 0.0f)]
+                [ParameterDefault(0.0f)][ParameterRange(-80.0f, 0.0f)]
                 GainInDBs
             }
 
@@ -200,20 +221,21 @@ namespace Unity.Audio
                 var output = context.Outputs.GetSampleBuffer(0);
                 var channelCount = output.Channels;
                 var sampleFrames = output.Samples;
-                var champleCount = channelCount * sampleFrames;
-
-                var inputBuffer = input.Buffer;
-                var outputBuffer = output.Buffer;
 
                 if (Channels.Length == 0)
                 {
-                    for (var n = 0; n < champleCount; n++)
-                        outputBuffer[n] = 0.0f;
+                    for (int channel = 0; channel < channelCount; ++channel)
+                    {
+                        var outputBuffer = output.GetBuffer(channel);
+                        for (var n = 0; n < outputBuffer.Length; n++)
+                            outputBuffer[n] = 0.0f;
+                    }
+
                     return;
                 }
 
                 var parameters = context.Parameters;
-                var filterType = (FilterType) parameters.GetFloat(Parameters.FilterType, 0);
+                var filterType = (FilterType)parameters.GetFloat(Parameters.FilterType, 0);
                 var cutoff = parameters.GetFloat(Parameters.Cutoff, 0);
                 var q = parameters.GetFloat(Parameters.Q, 0);
                 var gain = parameters.GetFloat(Parameters.GainInDBs, 0);
@@ -221,20 +243,22 @@ namespace Unity.Audio
 
                 for (var c = 0; c < Channels.Length; c++)
                 {
+                    var inputBuffer = input.GetBuffer(c);
+                    var outputBuffer = output.GetBuffer(c);
+
                     var z1 = Channels[c].z1;
                     var z2 = Channels[c].z2;
 
-                    for (var i = 0; i < champleCount; i += channelCount)
+                    for (var i = 0; i < sampleFrames; ++i)
                     {
-                        var x = inputBuffer[i + c];
-
+                        var x = inputBuffer[i];
                         var v3 = x - z2;
                         var v1 = coefficients.a1 * z1 + coefficients.a2 * v3;
                         var v2 = z2 + coefficients.a2 * z1 + coefficients.a3 * v3;
                         z1 = 2 * v1 - z1;
                         z2 = 2 * v2 - z2;
-                        outputBuffer[i + c] = coefficients.A *
-                                              (coefficients.m0 * x + coefficients.m1 * v1 + coefficients.m2 * v2);
+                        outputBuffer[i] = coefficients.A *
+                            (coefficients.m0 * x + coefficients.m1 * v1 + coefficients.m2 * v2);
                     }
 
                     Channels[c] = new Channel {z1 = z1, z2 = z2};

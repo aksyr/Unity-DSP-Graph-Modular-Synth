@@ -1,15 +1,20 @@
 {
   "name": "com.unity.media.utilities",
   "displayName": "Unity Media Utilities",
-  "version": "0.1.0-preview.3",
-  "unity": "2019.2",
+  "version": "0.1.0-preview.14",
+  "unity": "2020.2",
   "description": "Low-level, unsafe utilities shared by various unity packages",
   "dependencies": {
-    "com.unity.mathematics": "1.1.0"
+    "com.unity.mathematics": "1.2.1",
+    "com.unity.burst": "1.5.3",
+    "com.unity.test-framework": "1.1.27"
+  },
+  "upmCi": {
+    "footprint": "5d29e185cd00168c6fdce3153f7e7868541a531f"
   },
   "repository": {
+    "url": "https://github.cds.internal.unity3d.com/unity/media.git",
     "type": "git",
-    "url": "git@github.com:Unity-Technologies/media.git",
-    "revision": "d747634ca12735f51e9ed41180bfbe6401ae9d51"
+    "revision": "04e42752ae91c36317eb581046234ffbd9611807"
   }
 }

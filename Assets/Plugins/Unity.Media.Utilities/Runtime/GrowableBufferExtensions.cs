@@ -1,5 +1,8 @@
 namespace Unity.Media.Utilities
 {
+    /// <summary>
+    /// Extensions for <see cref="GrowableBuffer{T}"/>
+    /// </summary>
     public static class GrowableBufferExtensions
     {
         /// <summary>

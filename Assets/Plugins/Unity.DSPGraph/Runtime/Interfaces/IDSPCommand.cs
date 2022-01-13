@@ -1,4 +1,5 @@
 using System;
+using Unity.Media.Utilities;
 
 namespace Unity.Audio
 {
@@ -28,7 +29,7 @@ namespace Unity.Audio
 
         public static unsafe void Schedule(void* commandPointer)
         {
-            switch (*(DSPCommandType*)commandPointer)
+            switch (FromPointer(commandPointer))
             {
                 case DSPCommandType.Complete:
                     ((CompleteCommand*)commandPointer)->Schedule();
@@ -97,13 +98,13 @@ namespace Unity.Audio
                     ((RemoveSampleProviderCommand*)commandPointer)->Schedule();
                     break;
                 default:
-                    throw new InvalidOperationException("Invalid command type");
+                    break;
             }
         }
 
         internal static unsafe void Dispose(void* commandPointer)
         {
-            switch (*(DSPCommandType*)commandPointer)
+            switch (FromPointer(commandPointer))
             {
                 case DSPCommandType.Complete:
                     ((CompleteCommand*)commandPointer)->Dispose();
@@ -172,13 +173,13 @@ namespace Unity.Audio
                     ((RemoveSampleProviderCommand*)commandPointer)->Dispose();
                     break;
                 default:
-                    throw new InvalidOperationException("Invalid command type");
+                    break;
             }
         }
 
         internal static unsafe void Cancel(void* commandPointer)
         {
-            switch (*(DSPCommandType*)commandPointer)
+            switch (FromPointer(commandPointer))
             {
                 case DSPCommandType.Complete:
                     ((CompleteCommand*)commandPointer)->Cancel();
@@ -244,8 +245,15 @@ namespace Unity.Audio
                     ((RemoveSampleProviderCommand*)commandPointer)->Cancel();
                     break;
                 default:
-                    throw new InvalidOperationException("Invalid command type");
+                    break;
             }
+        }
+
+        private static unsafe DSPCommandType FromPointer(void* pointer)
+        {
+            var commandType = *(DSPCommandType*)pointer;
+            Utility.ValidateIndex((int)commandType, (int)DSPCommandType.RemoveSampleProvider, (int)DSPCommandType.Complete);
+            return commandType;
         }
     }
 }

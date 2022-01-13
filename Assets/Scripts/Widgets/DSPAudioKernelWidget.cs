@@ -60,8 +60,8 @@ public abstract class DSPAudioKernelWidget<TParameters, TProviders, TAudioKernel
 #endif
 
                 // add inlets and outlets
-                foreach (var inlet in inlets) block.AddInletPort(_DSPNode, inlet.channels, inlet.format);
-                foreach (var outlet in outlets) block.AddOutletPort(_DSPNode, outlet.channels, outlet.format);
+                foreach (var inlet in inlets) block.AddInletPort(_DSPNode, inlet.channels);
+                foreach (var outlet in outlets) block.AddOutletPort(_DSPNode, outlet.channels);
 
                 AddUpdateParametersToBlock(block);
             }

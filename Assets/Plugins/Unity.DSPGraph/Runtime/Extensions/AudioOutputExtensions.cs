@@ -3,9 +3,13 @@ using System.Runtime.InteropServices;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs.LowLevel.Unsafe;
+using Unity.Media.Utilities;
 
 namespace Unity.Audio
 {
+    /// <summary>
+    /// Extension methods for <see cref="IAudioOutput"/>
+    /// </summary>
     public static class AudioOutputExtensions
     {
         [StructLayout(LayoutKind.Sequential)]
@@ -24,7 +28,7 @@ namespace Unity.Audio
             public static IntPtr Initialize()
             {
                 if (s_JobReflectionData == IntPtr.Zero)
-                    s_JobReflectionData = JobsUtility.CreateJobReflectionData(typeof(TOutput), JobType.Single, (ExecuteJobFunction)Execute);
+                    { s_JobReflectionData = JobsUtility.CreateJobReflectionData(typeof(TOutput), (ExecuteJobFunction)Execute); }
                 return s_JobReflectionData;
             }
 
@@ -53,6 +57,7 @@ namespace Unity.Audio
             public static unsafe void Execute(ref TOutput data, IntPtr userData, IntPtr method, ref JobRanges ranges, int jobIndex)
             {
                 var methodID = (MethodID)method.ToInt32();
+                Utility.ValidateIndex((int)methodID, (int)MethodID.Initialize);
                 switch (methodID)
                 {
                     case MethodID.BeginMix:
@@ -87,7 +92,7 @@ namespace Unity.Audio
                         break;
                     }
                     default:
-                        throw new ArgumentOutOfRangeException();
+                        break;
                 }
             }
         }
@@ -96,8 +101,8 @@ namespace Unity.Audio
         /// Attach an output job to Unity's default audio output
         /// </summary>
         /// <param name="outputJob">An output job</param>
-        /// <typeparam name="T">A type implementing <typeparamref name="IAudioOutput"/></typeparam>
-        /// <returns>An <typeparamref name="AudioOutputHandle"/> representing the created audio job</returns>
+        /// <typeparam name="T">A type implementing <see cref="IAudioOutput"/></typeparam>
+        /// <returns>An <see cref="AudioOutputHandle"/> representing the created audio job</returns>
         public static unsafe AudioOutputHandle AttachToDefaultOutput<T>(this T outputJob) where T : struct, IAudioOutput
         {
             var output = new AudioOutputHandle();
@@ -110,6 +115,10 @@ namespace Unity.Audio
             return output;
         }
 
+        /// <summary>
+        /// Release an output handle and dispose its resources
+        /// </summary>
+        /// <param name="handle">The handle to be disposed</param>
         public static void DisposeOutputHook(ref AudioOutputHandle handle)
         {
             AudioOutputHookManager.Internal_DisposeAudioOutputHook(ref handle.Handle);

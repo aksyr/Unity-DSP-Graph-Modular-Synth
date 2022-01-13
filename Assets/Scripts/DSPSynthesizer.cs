@@ -52,13 +52,21 @@ public class DSPSynthesizer : MonoBehaviour
 
     void ConfigureDSP()
     {
-        AudioConfiguration audioConfig = AudioSettings.GetConfiguration();
-        Debug.LogFormat("BufferSize={0} SampleRate={1}", audioConfig.dspBufferSize, audioConfig.sampleRate);
+        var format = ChannelEnumConverter.GetSoundFormatFromSpeakerMode(AudioSettings.speakerMode);
+        var channels = ChannelEnumConverter.GetChannelCountFromSoundFormat(format);
+        AudioSettings.GetDSPBufferSize(out var bufferLength, out var numBuffers);
+        var sampleRate = AudioSettings.outputSampleRate;
+        Debug.LogFormat("Format={2} Channels={3} BufferLength={0} SampleRate={1}", bufferLength, sampleRate, format, channels);
 
-        _Graph = DSPGraph.Create(SoundFormat.Stereo, 2, audioConfig.dspBufferSize, audioConfig.sampleRate);
+        _Graph = DSPGraph.Create(format, channels, bufferLength, sampleRate);
         _Driver = new MyAudioDriver { Graph = _Graph };
         _OutputHandle = _Driver.AttachToDefaultOutput();
 
+        CreateSynth0();
+    }
+
+    void CreateSynth0()
+    {
         // create graph structure
         using (var block = _Graph.CreateCommandBlock())
         {
@@ -208,76 +216,76 @@ public class DSPSynthesizer : MonoBehaviour
     static DSPNode CreateOscilator(DSPCommandBlock block)
     {
         var oscilator = block.CreateDSPNode<OscilatorNode.Parameters, OscilatorNode.Providers, OscilatorNode>();
-        block.AddInletPort(oscilator, 16, SoundFormat.Mono); // fm
-        block.AddInletPort(oscilator, 16, SoundFormat.Mono); // pitch
-        block.AddInletPort(oscilator, 16, SoundFormat.Mono); // phase reset
-        block.AddOutletPort(oscilator, 16, SoundFormat.Mono);
+        block.AddInletPort(oscilator, 16); // fm
+        block.AddInletPort(oscilator, 16); // pitch
+        block.AddInletPort(oscilator, 16); // phase reset
+        block.AddOutletPort(oscilator, 16);
         return oscilator;
     }
 
     static DSPNode CreateADSR(DSPCommandBlock block)
     {
         var adsr = block.CreateDSPNode<ADSRNode.Parameters, ADSRNode.Providers, ADSRNode>();
-        block.AddInletPort(adsr, 16, SoundFormat.Mono); // gate
-        block.AddOutletPort(adsr, 16, SoundFormat.Mono);
+        block.AddInletPort(adsr, 16); // gate
+        block.AddOutletPort(adsr, 16);
         return adsr;
     }
 
     static DSPNode CreateVCA(DSPCommandBlock block)
     {
         var vca = block.CreateDSPNode<VCANode.Parameters, VCANode.Providers, VCANode>();
-        block.AddInletPort(vca, 16, SoundFormat.Mono); // voltage
-        block.AddInletPort(vca, 16, SoundFormat.Mono); // input
-        block.AddOutletPort(vca, 16, SoundFormat.Mono);
+        block.AddInletPort(vca, 16); // voltage
+        block.AddInletPort(vca, 16); // input
+        block.AddOutletPort(vca, 16);
         return vca;
     }
 
     static DSPNode CreateMixer(DSPCommandBlock block)
     {
         var mixer = block.CreateDSPNode<MixerNode.Parameters, MixerNode.Providers, MixerNode>();
-        block.AddInletPort(mixer, 16, SoundFormat.Mono); // input
-        block.AddInletPort(mixer, 16, SoundFormat.Mono); // cv
-        block.AddOutletPort(mixer, 1, SoundFormat.Mono);
+        block.AddInletPort(mixer, 16); // input
+        block.AddInletPort(mixer, 16); // cv
+        block.AddOutletPort(mixer, 1);
         return mixer;
     }
 
     static DSPNode CreateMidi(DSPCommandBlock block)
     {
         var midi = block.CreateDSPNode<MidiNode.Parameters, MidiNode.Providers, MidiNode>();
-        block.AddOutletPort(midi, 16, SoundFormat.Mono); // gate
-        block.AddOutletPort(midi, 16, SoundFormat.Mono); // note
-        block.AddOutletPort(midi, 16, SoundFormat.Mono); // retrigger
+        block.AddOutletPort(midi, 16); // gate
+        block.AddOutletPort(midi, 16); // note
+        block.AddOutletPort(midi, 16); // retrigger
         return midi;
     }
 
     static DSPNode CreateAttenuator(DSPCommandBlock block)
     {
         var attenuator = block.CreateDSPNode<AttenuatorNode.Parameters, AttenuatorNode.Providers, AttenuatorNode>();
-        block.AddInletPort(attenuator, 1, SoundFormat.Mono);
-        block.AddOutletPort(attenuator, 1, SoundFormat.Mono);
+        block.AddInletPort(attenuator, 1);
+        block.AddOutletPort(attenuator, 1);
         return attenuator;
     }
 
     static DSPNode CreateMonoToStereo(DSPCommandBlock block)
     {
         var mts = block.CreateDSPNode<MonoToStereoNode.Parameters, MonoToStereoNode.Providers, MonoToStereoNode>();
-        block.AddInletPort(mts, 1, SoundFormat.Mono); // left
-        block.AddInletPort(mts, 1, SoundFormat.Mono); // right
-        block.AddOutletPort(mts, 2, SoundFormat.Stereo);
+        block.AddInletPort(mts, 1); // left
+        block.AddInletPort(mts, 1); // right
+        block.AddOutletPort(mts, 2);
         return mts;
     }
 
     static DSPNode CreateMonoScope(DSPCommandBlock block)
     {
         var scope = block.CreateDSPNode<ScopeNode.Parameters, ScopeNode.Providers, ScopeNode>();
-        block.AddInletPort(scope, 1, SoundFormat.Mono);
+        block.AddInletPort(scope, 1);
         return scope;
     }
 
     static DSPNode CreateSpectrum(DSPCommandBlock block)
     {
         var scope = block.CreateDSPNode<SpectrumNode.Parameters, SpectrumNode.Providers, SpectrumNode>();
-        block.AddInletPort(scope, 1, SoundFormat.Mono);
+        block.AddInletPort(scope, 1);
         return scope;
     }
 }

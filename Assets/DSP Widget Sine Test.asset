@@ -1,0 +1,502 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &-6467376069019102911
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8bbcd649f6e0d9047927b8cb6c6462ae, type: 3}
+  m_Name: Root Node Widget
+  m_EditorClassIdentifier: 
+  graph: {fileID: 11400000}
+  position: {x: 1400, y: -600}
+  ports:
+    keys:
+    - StereoInput
+    values:
+    - _fieldName: StereoInput
+      _node: {fileID: -6467376069019102911}
+      _typeQualifiedName: DSPNodeWidget, Assembly-CSharp, Version=0.0.0.0, Culture=neutral,
+        PublicKeyToken=null
+      connections:
+      - fieldName: StereoOutputs
+        node: {fileID: -4148791549646013668}
+        reroutePoints: []
+      _direction: 0
+      _connectionType: 1
+      _typeConstraint: 1
+      _dynamic: 0
+  StereoInput: {fileID: 0}
+--- !u!114 &-4148791549646013668
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4d68a538488798849af46c9562ec54b2, type: 3}
+  m_Name: Mono To Stereo Node Widget
+  m_EditorClassIdentifier: 
+  graph: {fileID: 11400000}
+  position: {x: 1016, y: -616}
+  ports:
+    keys:
+    - MonoLeft
+    - MonoRight
+    - StereoOutputs
+    values:
+    - _fieldName: MonoLeft
+      _node: {fileID: -4148791549646013668}
+      _typeQualifiedName: DSPNodeWidget, Assembly-CSharp, Version=0.0.0.0, Culture=neutral,
+        PublicKeyToken=null
+      connections:
+      - fieldName: Mono1
+        node: {fileID: 9173715221100434465}
+        reroutePoints: []
+      _direction: 0
+      _connectionType: 0
+      _typeConstraint: 0
+      _dynamic: 0
+    - _fieldName: MonoRight
+      _node: {fileID: -4148791549646013668}
+      _typeQualifiedName: DSPNodeWidget, Assembly-CSharp, Version=0.0.0.0, Culture=neutral,
+        PublicKeyToken=null
+      connections: []
+      _direction: 0
+      _connectionType: 0
+      _typeConstraint: 0
+      _dynamic: 0
+    - _fieldName: StereoOutputs
+      _node: {fileID: -4148791549646013668}
+      _typeQualifiedName: DSPNodeWidget, Assembly-CSharp, Version=0.0.0.0, Culture=neutral,
+        PublicKeyToken=null
+      connections:
+      - fieldName: StereoInput
+        node: {fileID: -6467376069019102911}
+        reroutePoints: []
+      _direction: 1
+      _connectionType: 0
+      _typeConstraint: 0
+      _dynamic: 0
+  MonoLeft: {fileID: 0}
+  MonoRight: {fileID: 0}
+  StereoOutputs: {fileID: 0}
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 00fea7bb95dde3d4683d65192f4facd8, type: 3}
+  m_Name: DSP Widget Sine Test
+  m_EditorClassIdentifier: 
+  nodes:
+  - {fileID: -6467376069019102911}
+  - {fileID: -4148791549646013668}
+  - {fileID: 8269579045099651770}
+  - {fileID: 9173715221100434465}
+  - {fileID: 6099232112304948453}
+  - {fileID: 5254578706496879138}
+  - {fileID: 6992269776950178544}
+  _RootNode: {fileID: -6467376069019102911}
+--- !u!114 &5254578706496879138
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0283099eb8ae18644b8a1c0ee6f40a72, type: 3}
+  m_Name: Mono Scope Node Widget
+  m_EditorClassIdentifier: 
+  graph: {fileID: 11400000}
+  position: {x: 1128, y: 40}
+  ports:
+    keys:
+    - MonoInput
+    values:
+    - _fieldName: MonoInput
+      _node: {fileID: 5254578706496879138}
+      _typeQualifiedName: DSPNodeWidget, Assembly-CSharp, Version=0.0.0.0, Culture=neutral,
+        PublicKeyToken=null
+      connections:
+      - fieldName: Mono2
+        node: {fileID: 9173715221100434465}
+        reroutePoints: []
+      _direction: 0
+      _connectionType: 1
+      _typeConstraint: 0
+      _dynamic: 0
+  Time: 0.08
+  TriggerTreshold: -0.08
+  Height: 4.61
+  Offset: 0
+  MonoInput: {fileID: 0}
+--- !u!114 &6099232112304948453
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0283099eb8ae18644b8a1c0ee6f40a72, type: 3}
+  m_Name: Mono Scope Node Widget
+  m_EditorClassIdentifier: 
+  graph: {fileID: 11400000}
+  position: {x: 1224, y: -504}
+  ports:
+    keys:
+    - MonoInput
+    values:
+    - _fieldName: MonoInput
+      _node: {fileID: 6099232112304948453}
+      _typeQualifiedName: DSPNodeWidget, Assembly-CSharp, Version=0.0.0.0, Culture=neutral,
+        PublicKeyToken=null
+      connections:
+      - fieldName: Mono1
+        node: {fileID: 9173715221100434465}
+        reroutePoints: []
+      _direction: 0
+      _connectionType: 1
+      _typeConstraint: 0
+      _dynamic: 0
+  Time: 0.08
+  TriggerTreshold: -0.08
+  Height: 4.61
+  Offset: 0.5
+  MonoInput: {fileID: 0}
+--- !u!114 &6992269776950178544
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6f4aca73e0f5438408cfc086f17e6ad7, type: 3}
+  m_Name: Scope Node Widget
+  m_EditorClassIdentifier: 
+  graph: {fileID: 11400000}
+  position: {x: 424, y: -136}
+  ports:
+    keys:
+    - Input
+    values:
+    - _fieldName: Input
+      _node: {fileID: 6992269776950178544}
+      _typeQualifiedName: DSPNodeWidget, Assembly-CSharp, Version=0.0.0.0, Culture=neutral,
+        PublicKeyToken=null
+      connections:
+      - fieldName: Output
+        node: {fileID: 8269579045099651770}
+        reroutePoints: []
+      _direction: 0
+      _connectionType: 1
+      _typeConstraint: 0
+      _dynamic: 0
+  Time: 0.1
+  TriggerTreshold: 0
+  Height: 5.01
+  Offset: 0
+  Input: {fileID: 0}
+--- !u!114 &8269579045099651770
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 24351f889a562904882eed9c4789f57b, type: 3}
+  m_Name: Oscilator Node Widget
+  m_EditorClassIdentifier: 
+  graph: {fileID: 11400000}
+  position: {x: 56, y: -760}
+  ports:
+    keys:
+    - FMInput
+    - Pitch
+    - Reset
+    - Output
+    values:
+    - _fieldName: FMInput
+      _node: {fileID: 8269579045099651770}
+      _typeQualifiedName: DSPNodeWidget, Assembly-CSharp, Version=0.0.0.0, Culture=neutral,
+        PublicKeyToken=null
+      connections: []
+      _direction: 0
+      _connectionType: 0
+      _typeConstraint: 0
+      _dynamic: 0
+    - _fieldName: Pitch
+      _node: {fileID: 8269579045099651770}
+      _typeQualifiedName: DSPNodeWidget, Assembly-CSharp, Version=0.0.0.0, Culture=neutral,
+        PublicKeyToken=null
+      connections: []
+      _direction: 0
+      _connectionType: 0
+      _typeConstraint: 0
+      _dynamic: 0
+    - _fieldName: Reset
+      _node: {fileID: 8269579045099651770}
+      _typeQualifiedName: DSPNodeWidget, Assembly-CSharp, Version=0.0.0.0, Culture=neutral,
+        PublicKeyToken=null
+      connections: []
+      _direction: 0
+      _connectionType: 0
+      _typeConstraint: 0
+      _dynamic: 0
+    - _fieldName: Output
+      _node: {fileID: 8269579045099651770}
+      _typeQualifiedName: DSPNodeWidget, Assembly-CSharp, Version=0.0.0.0, Culture=neutral,
+        PublicKeyToken=null
+      connections:
+      - fieldName: Input
+        node: {fileID: 9173715221100434465}
+        reroutePoints: []
+      - fieldName: Input
+        node: {fileID: 6992269776950178544}
+        reroutePoints: []
+      _direction: 1
+      _connectionType: 0
+      _typeConstraint: 0
+      _dynamic: 0
+  Frequency: 261.63
+  Mode: 0
+  FMMultiplier: 0
+  Unidirectional: 0
+  FMInput: {fileID: 0}
+  Pitch: {fileID: 0}
+  Reset: {fileID: 0}
+  Output: {fileID: 0}
+--- !u!114 &9173715221100434465
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e6f180d34ddbdf44292d8a21cd2dc045, type: 3}
+  m_Name: Split Node Widget
+  m_EditorClassIdentifier: 
+  graph: {fileID: 11400000}
+  position: {x: 616, y: -680}
+  ports:
+    keys:
+    - Input
+    - Mono1
+    - Mono2
+    - Mono3
+    - Mono4
+    - Mono5
+    - Mono6
+    - Mono7
+    - Mono8
+    - Mono9
+    - Mono10
+    - Mono11
+    - Mono12
+    - Mono13
+    - Mono14
+    - Mono15
+    - Mono16
+    values:
+    - _fieldName: Input
+      _node: {fileID: 9173715221100434465}
+      _typeQualifiedName: DSPNodeWidget, Assembly-CSharp, Version=0.0.0.0, Culture=neutral,
+        PublicKeyToken=null
+      connections:
+      - fieldName: Output
+        node: {fileID: 8269579045099651770}
+        reroutePoints: []
+      _direction: 0
+      _connectionType: 1
+      _typeConstraint: 0
+      _dynamic: 0
+    - _fieldName: Mono1
+      _node: {fileID: 9173715221100434465}
+      _typeQualifiedName: DSPNodeWidget, Assembly-CSharp, Version=0.0.0.0, Culture=neutral,
+        PublicKeyToken=null
+      connections:
+      - fieldName: MonoLeft
+        node: {fileID: -4148791549646013668}
+        reroutePoints: []
+      - fieldName: MonoInput
+        node: {fileID: 6099232112304948453}
+        reroutePoints: []
+      _direction: 1
+      _connectionType: 0
+      _typeConstraint: 0
+      _dynamic: 0
+    - _fieldName: Mono2
+      _node: {fileID: 9173715221100434465}
+      _typeQualifiedName: DSPNodeWidget, Assembly-CSharp, Version=0.0.0.0, Culture=neutral,
+        PublicKeyToken=null
+      connections:
+      - fieldName: MonoInput
+        node: {fileID: 5254578706496879138}
+        reroutePoints: []
+      _direction: 1
+      _connectionType: 0
+      _typeConstraint: 0
+      _dynamic: 0
+    - _fieldName: Mono3
+      _node: {fileID: 9173715221100434465}
+      _typeQualifiedName: DSPNodeWidget, Assembly-CSharp, Version=0.0.0.0, Culture=neutral,
+        PublicKeyToken=null
+      connections: []
+      _direction: 1
+      _connectionType: 0
+      _typeConstraint: 0
+      _dynamic: 0
+    - _fieldName: Mono4
+      _node: {fileID: 9173715221100434465}
+      _typeQualifiedName: DSPNodeWidget, Assembly-CSharp, Version=0.0.0.0, Culture=neutral,
+        PublicKeyToken=null
+      connections: []
+      _direction: 1
+      _connectionType: 0
+      _typeConstraint: 0
+      _dynamic: 0
+    - _fieldName: Mono5
+      _node: {fileID: 9173715221100434465}
+      _typeQualifiedName: DSPNodeWidget, Assembly-CSharp, Version=0.0.0.0, Culture=neutral,
+        PublicKeyToken=null
+      connections: []
+      _direction: 1
+      _connectionType: 0
+      _typeConstraint: 0
+      _dynamic: 0
+    - _fieldName: Mono6
+      _node: {fileID: 9173715221100434465}
+      _typeQualifiedName: DSPNodeWidget, Assembly-CSharp, Version=0.0.0.0, Culture=neutral,
+        PublicKeyToken=null
+      connections: []
+      _direction: 1
+      _connectionType: 0
+      _typeConstraint: 0
+      _dynamic: 0
+    - _fieldName: Mono7
+      _node: {fileID: 9173715221100434465}
+      _typeQualifiedName: DSPNodeWidget, Assembly-CSharp, Version=0.0.0.0, Culture=neutral,
+        PublicKeyToken=null
+      connections: []
+      _direction: 1
+      _connectionType: 0
+      _typeConstraint: 0
+      _dynamic: 0
+    - _fieldName: Mono8
+      _node: {fileID: 9173715221100434465}
+      _typeQualifiedName: DSPNodeWidget, Assembly-CSharp, Version=0.0.0.0, Culture=neutral,
+        PublicKeyToken=null
+      connections: []
+      _direction: 1
+      _connectionType: 0
+      _typeConstraint: 0
+      _dynamic: 0
+    - _fieldName: Mono9
+      _node: {fileID: 9173715221100434465}
+      _typeQualifiedName: DSPNodeWidget, Assembly-CSharp, Version=0.0.0.0, Culture=neutral,
+        PublicKeyToken=null
+      connections: []
+      _direction: 1
+      _connectionType: 0
+      _typeConstraint: 0
+      _dynamic: 0
+    - _fieldName: Mono10
+      _node: {fileID: 9173715221100434465}
+      _typeQualifiedName: DSPNodeWidget, Assembly-CSharp, Version=0.0.0.0, Culture=neutral,
+        PublicKeyToken=null
+      connections: []
+      _direction: 1
+      _connectionType: 0
+      _typeConstraint: 0
+      _dynamic: 0
+    - _fieldName: Mono11
+      _node: {fileID: 9173715221100434465}
+      _typeQualifiedName: DSPNodeWidget, Assembly-CSharp, Version=0.0.0.0, Culture=neutral,
+        PublicKeyToken=null
+      connections: []
+      _direction: 1
+      _connectionType: 0
+      _typeConstraint: 0
+      _dynamic: 0
+    - _fieldName: Mono12
+      _node: {fileID: 9173715221100434465}
+      _typeQualifiedName: DSPNodeWidget, Assembly-CSharp, Version=0.0.0.0, Culture=neutral,
+        PublicKeyToken=null
+      connections: []
+      _direction: 1
+      _connectionType: 0
+      _typeConstraint: 0
+      _dynamic: 0
+    - _fieldName: Mono13
+      _node: {fileID: 9173715221100434465}
+      _typeQualifiedName: DSPNodeWidget, Assembly-CSharp, Version=0.0.0.0, Culture=neutral,
+        PublicKeyToken=null
+      connections: []
+      _direction: 1
+      _connectionType: 0
+      _typeConstraint: 0
+      _dynamic: 0
+    - _fieldName: Mono14
+      _node: {fileID: 9173715221100434465}
+      _typeQualifiedName: DSPNodeWidget, Assembly-CSharp, Version=0.0.0.0, Culture=neutral,
+        PublicKeyToken=null
+      connections: []
+      _direction: 1
+      _connectionType: 0
+      _typeConstraint: 0
+      _dynamic: 0
+    - _fieldName: Mono15
+      _node: {fileID: 9173715221100434465}
+      _typeQualifiedName: DSPNodeWidget, Assembly-CSharp, Version=0.0.0.0, Culture=neutral,
+        PublicKeyToken=null
+      connections: []
+      _direction: 1
+      _connectionType: 0
+      _typeConstraint: 0
+      _dynamic: 0
+    - _fieldName: Mono16
+      _node: {fileID: 9173715221100434465}
+      _typeQualifiedName: DSPNodeWidget, Assembly-CSharp, Version=0.0.0.0, Culture=neutral,
+        PublicKeyToken=null
+      connections: []
+      _direction: 1
+      _connectionType: 0
+      _typeConstraint: 0
+      _dynamic: 0
+  Input: {fileID: 0}
+  Mono1: {fileID: 0}
+  Mono2: {fileID: 0}
+  Mono3: {fileID: 0}
+  Mono4: {fileID: 0}
+  Mono5: {fileID: 0}
+  Mono6: {fileID: 0}
+  Mono7: {fileID: 0}
+  Mono8: {fileID: 0}
+  Mono9: {fileID: 0}
+  Mono10: {fileID: 0}
+  Mono11: {fileID: 0}
+  Mono12: {fileID: 0}
+  Mono13: {fileID: 0}
+  Mono14: {fileID: 0}
+  Mono15: {fileID: 0}
+  Mono16: {fileID: 0}

@@ -8,6 +8,8 @@ namespace Unity.Audio
     /// It is used inside <see cref="IAudioKernel{TParameters,TProviders}.Execute"/>
     /// </summary>
     /// <see cref="IAudioKernel{TParameters,TProviders}"/>
+    /// <typeparam name="TParameters"></typeparam>
+    /// <typeparam name="TProviders"></typeparam>
     public unsafe struct ExecuteContext<TParameters, TProviders>
         where TParameters : unmanaged, Enum
         where TProviders  : unmanaged, Enum

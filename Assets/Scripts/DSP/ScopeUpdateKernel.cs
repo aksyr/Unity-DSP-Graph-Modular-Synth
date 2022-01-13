@@ -4,7 +4,7 @@ using Unity.Audio;
 using Unity.Collections;
 using Unity.Burst;
 
-[BurstCompile]
+[BurstCompile(CompileSynchronously = true)]
 public struct ScopeUpdateKernel : IAudioKernelUpdate<ScopeNode.Parameters, ScopeNode.Providers, ScopeNode>
 {
     private NativeArray<float> _BufferX;

@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Unity.Burst;
 using Unity.Collections;
@@ -6,8 +7,8 @@ using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
 using Unity.Mathematics;
 using Unity.Media.Utilities;
-using UnityEngine;
 using UnityEngine.Experimental.Audio;
+using Debug = UnityEngine.Debug;
 
 namespace Unity.Audio
 {
@@ -24,14 +25,9 @@ namespace Unity.Audio
             set => *m_OutputReferences = value;
         }
 
-        private readonly GrowableBufferDescription m_OutputPortReferences;
-        internal GrowableBuffer<int> OutputPortReferences => GrowableBuffer<int>.FromDescription(m_OutputPortReferences);
-
-        private readonly GrowableBufferDescription m_Inputs;
-        internal GrowableBuffer<PortDescription> Inputs => GrowableBuffer<PortDescription>.FromDescription(m_Inputs);
-
-        private readonly GrowableBufferDescription m_Outputs;
-        internal GrowableBuffer<PortDescription> Outputs => GrowableBuffer<PortDescription>.FromDescription(m_Outputs);
+        internal GrowableBuffer<int> OutputPortReferences;
+        internal GrowableBuffer<PortDescription> Inputs;
+        internal GrowableBuffer<PortDescription> Outputs;
 
         [NativeDisableUnsafePtrRestriction]
         private readonly int* m_InputConnectionIndex;
@@ -50,14 +46,9 @@ namespace Unity.Audio
         }
 
         private readonly AudioKernelExtensions.ParameterDescriptionData m_ParameterDescriptions;
-        private readonly GrowableBufferDescription m_Parameters;
-        internal GrowableBuffer<Parameter> Parameters => GrowableBuffer<Parameter>.FromDescription(m_Parameters);
-
-        private readonly GrowableBufferDescription m_SampleProviders;
-        private GrowableBuffer<GrowableBufferDescription> SampleProviders => GrowableBuffer<GrowableBufferDescription>.FromDescription(m_SampleProviders);
-
-        private readonly GrowableBufferDescription m_OwnedSampleProviders;
-        private GrowableBuffer<uint> OwnedSampleProviders => GrowableBuffer<uint>.FromDescription(m_OwnedSampleProviders);
+        internal GrowableBuffer<Parameter> Parameters;
+        private GrowableBuffer<GrowableBuffer<SampleProvider>> m_SampleProviders;
+        private GrowableBuffer<uint> m_OwnedSampleProviders;
 
         [NativeDisableUnsafePtrRestriction]
         internal readonly void* JobReflectionData;
@@ -78,8 +69,8 @@ namespace Unity.Audio
         private long* m_JobDataAllocationRoot;
 
         internal bool IsTopologicalRoot => Valid &&
-            OutputConnectionIndex == DSPConnection.InvalidIndex &&
-            InputConnectionIndex != DSPConnection.InvalidIndex;
+        OutputConnectionIndex == DSPConnection.InvalidIndex &&
+        InputConnectionIndex != DSPConnection.InvalidIndex;
 
         internal DSPNode(DSPGraph dspGraph, Handle nodeHandle, DSPGraph* unsafeGraphBuffer, void* jobReflectionData, void* persistentStructMemory, AudioKernelExtensions.DSPParameterDescription* descriptions, int parameterCount, AudioKernelExtensions.DSPSampleProviderDescription* dspSampleProviderDescription, int sampleProviderCount)
         {
@@ -114,17 +105,15 @@ namespace Unity.Audio
             JobDataBuffer->NativeJobData.GraphIndex = Graph.Id;
             JobDataBuffer->NativeJobData.NodeIndex = Handle.Id;
             JobDataBuffer->NativeJobData.GraphRegistry = unsafeGraphBuffer;
-            m_OutputPortReferences = new GrowableBuffer<int>(Allocator.Persistent).Description;
-            m_Inputs = new GrowableBuffer<PortDescription>(Allocator.Persistent).Description;
-            m_Outputs = new GrowableBuffer<PortDescription>(Allocator.Persistent).Description;
-            var parameters = new GrowableBuffer<Parameter>(Allocator.Persistent, Math.Max(parameterCount, 1));
-            m_Parameters = parameters.Description;
-            var sampleProviders = new GrowableBuffer<GrowableBufferDescription>(Allocator.Persistent, Math.Max(sampleProviderCount, 1));
-            m_SampleProviders = sampleProviders.Description;
-            m_OwnedSampleProviders = new GrowableBuffer<uint>(Allocator.Persistent).Description;
+            OutputPortReferences = new GrowableBuffer<int>(Allocator.Persistent);
+            Inputs = new GrowableBuffer<PortDescription>(Allocator.Persistent);
+            Outputs = new GrowableBuffer<PortDescription>(Allocator.Persistent);
+            Parameters = new GrowableBuffer<Parameter>(Allocator.Persistent, Math.Max(parameterCount, 1));
+            m_SampleProviders = new GrowableBuffer<GrowableBuffer<SampleProvider>>(Allocator.Persistent, Math.Max(sampleProviderCount, 1));
+            m_OwnedSampleProviders = new GrowableBuffer<uint>(Allocator.Persistent);
 
             for (var i = 0; i < parameterCount; ++i)
-                parameters.Add(new Parameter
+                Parameters.Add(new Parameter
                 {
                     KeyIndex = DSPParameterKey.NullIndex,
                     Value = descriptions[i].DefaultValue,
@@ -144,11 +133,11 @@ namespace Unity.Audio
                     subproviders.Add(default);
                 // else it's a variable array, and we'll leave it at length 0 until the user adds providers
 
-                sampleProviders.Add(subproviders.Description);
+                m_SampleProviders.Add(subproviders);
             }
         }
 
-        public void Dispose(DSPGraph graph)
+        internal void Dispose(DSPGraph graph)
         {
             DeallocateJobData();
 
@@ -162,13 +151,13 @@ namespace Unity.Audio
                 graph.FreeParameterKeys(parameters[i].KeyIndex);
             parameters.Dispose();
 
-            var sampleProviders = SampleProviders;
+            var sampleProviders = m_SampleProviders;
             for (int i = 0; i < sampleProviders.Count; ++i)
-                GrowableBuffer<SampleProvider>.FromDescription(sampleProviders[i]).Dispose();
+                sampleProviders[i].Dispose();
             sampleProviders.Dispose();
 
             // Release sample providers that we own
-            var ownedSampleProviders = OwnedSampleProviders;
+            var ownedSampleProviders = m_OwnedSampleProviders;
             for (int i = 0; i < ownedSampleProviders.Count; ++i)
                 AudioSampleProvider.InternalRemove(ownedSampleProviders[i]);
             ownedSampleProviders.Dispose();
@@ -267,10 +256,10 @@ namespace Unity.Audio
             JobDataBuffer->NativeJobData.DSPBufferSize = (uint)graph.DSPBufferSize;
             JobDataBuffer->NativeJobData.SampleRate = (uint)graph.SampleRate;
             JobDataBuffer->NativeJobData.SampleReadCount = (uint)graph.LastReadLength;
-            JobDataBuffer->NativeJobData.ParameterKeys = graph.ParameterKeys.UnsafeDataPointer;
+            JobDataBuffer->NativeJobData.ParameterKeys = *graph.ParameterKeys.UnsafeDataPointer;
 
             bool isRoot = Equals(graph.RootDSP);
-            float* floatBufferStart = isRoot ? graph.RootBuffer.UnsafeDataPointer : JobDataBuffer->Buffer;
+            float* floatBufferStart = isRoot ? *graph.RootBuffer.UnsafeDataPointer : JobDataBuffer->Buffer;
             float* floatCursor = floatBufferStart;
             SetupPortBuffers(graph, graph.LastReadLength, &floatCursor);
             SetupParameters();
@@ -299,13 +288,12 @@ namespace Unity.Audio
         /// <param name="graph">The graph to which this node belongs</param>
         internal void CleanupJobData(DSPGraph graph)
         {
-            var parameters = Parameters;
             var jobParameters = JobDataBuffer->NativeJobData.Parameters;
 
-            for (var i = 0; i < parameters.Count; ++i)
+            for (var i = 0; i < Parameters.Count; ++i)
             {
                 // Read back final interpolated parameter values
-                parameters[i] = new Parameter
+                Parameters[i] = new Parameter
                 {
                     KeyIndex = graph.FreeParameterKeys(jobParameters[i].m_KeyIndex, graph.DSPClock),
                     Value = jobParameters[i].m_Value,
@@ -315,32 +303,29 @@ namespace Unity.Audio
 
         void CountSampleProviders(out int indexCount, out int providerCount)
         {
-            GrowableBuffer<GrowableBufferDescription> sampleProviders = SampleProviders;
-            indexCount = sampleProviders.Count;
+            indexCount = m_SampleProviders.Count;
 
             providerCount = 0;
             for (int i = 0; i < indexCount; ++i)
-                providerCount += GrowableBuffer<SampleProvider>.FromDescription(sampleProviders[i]).Count;
+                providerCount += m_SampleProviders[i].Count;
         }
 
         void CountParameters(out int parameterCount, out int interpolatedParameterCount)
         {
-            var parameters = Parameters;
-            parameterCount = parameters.Count;
+            parameterCount = Parameters.Count;
 
             interpolatedParameterCount = 0;
             for (int i = 0; i < parameterCount; i++)
-                if (parameters[i].KeyIndex != DSPParameterKey.NullIndex)
+                if (Parameters[i].KeyIndex != DSPParameterKey.NullIndex)
                     ++interpolatedParameterCount;
         }
 
         void CountPortBuffers(DSPGraph graph, int sampleFrameCount, out int inputBufferCount, out int inputSampleCount, out int outputBufferCount, out int outputSampleCount)
         {
-            GrowableBuffer<PortDescription> inputs = Inputs;
-            inputBufferCount = inputs.Count;
+            inputBufferCount = Inputs.Count;
             inputSampleCount = 0;
             for (int i = 0; i < inputBufferCount; ++i)
-                inputSampleCount += inputs[i].Channels * sampleFrameCount;
+                inputSampleCount += Inputs[i].Channels * sampleFrameCount;
 
             outputBufferCount = 0;
             outputSampleCount = 0;
@@ -354,17 +339,13 @@ namespace Unity.Audio
                 return;
             }
 
-            GrowableBuffer<PortDescription> outputs = Outputs;
-            var outputCount = outputs.Count;
-            GrowableBuffer<int> outputPortReferences = OutputPortReferences;
-
-            for (int i = 0; i < outputCount; ++i)
+            for (int i = 0; i < Outputs.Count; ++i)
             {
                 // We only create a buffer if there needs to be one.
-                if (outputPortReferences[i] >= 0)
+                if (OutputPortReferences[i] >= 0)
                 {
                     ++outputBufferCount;
-                    outputSampleCount += outputs[i].Channels * sampleFrameCount;
+                    outputSampleCount += Outputs[i].Channels * sampleFrameCount;
                 }
             }
         }
@@ -373,34 +354,26 @@ namespace Unity.Audio
         {
             NativeSampleBuffer* inputBuffers = JobDataBuffer->NativeJobData.InputBuffers;
             var inputBuffersCount = JobDataBuffer->NativeJobData.InputBufferCount;
-            GrowableBuffer<PortDescription> nodeInputs = Inputs;
 
             for (int i = 0; i < inputBuffersCount; i++)
-            {
-                PortDescription input = nodeInputs[i];
                 inputBuffers[i] = new NativeSampleBuffer
                 {
-                    Channels = (uint)input.Channels,
-                    Format = input.Format,
+                    Channels = (uint)Inputs[i].Channels,
                     Buffer = null,
                 };
-            }
 
             // Steal output buffers from the node connected our inputs if we're the only ones using it.
             // Root node doesn't steal output buffers from input nodes, since it mixes into the graph's root buffer.
             if (!Equals(graph.RootDSP))
             {
-                GrowableBuffer<DSPNode> nodes = graph.Nodes;
-                GrowableBuffer<DSPConnection> connections = graph.Connections;
-
                 for (int inputConnectionIndex = InputConnectionIndex; inputConnectionIndex != DSPConnection.InvalidIndex;)
                 {
-                    DSPConnection conn = connections[inputConnectionIndex];
+                    DSPConnection conn = graph.Connections[inputConnectionIndex];
                     var inputPort = conn.InputPort;
                     // See if we've already stolen an output buffer for this input.
                     if (!conn.HasAttenuation && inputBuffers[inputPort].Buffer == null)
                     {
-                        DSPNode inputNode = nodes[conn.OutputNodeIndex];
+                        DSPNode inputNode = graph.Nodes[conn.OutputNodeIndex];
                         JobData* inputData = inputNode.JobDataBuffer;
                         NativeSampleBuffer* peerOutputs = inputData->NativeJobData.OutputBuffers;
                         NativeSampleBuffer peerOutput = peerOutputs[conn.OutputPort];
@@ -432,20 +405,16 @@ namespace Unity.Audio
 
             NativeSampleBuffer* outputBuffers = JobDataBuffer->NativeJobData.OutputBuffers;
             var outputBuffersCount = JobDataBuffer->NativeJobData.OutputBufferCount;
-            GrowableBuffer<PortDescription> nodeOutputs = Outputs;
-            GrowableBuffer<int> nodeOutputPortReferences = OutputPortReferences;
-
             float* outputStart = *floatCursor;
 
             for (int i = 0; i < outputBuffersCount; i++)
             {
-                PortDescription output = nodeOutputs[i];
-                bool initializeBuffer = nodeOutputPortReferences[i] >= 0;
+                PortDescription output = Outputs[i];
+                bool initializeBuffer = OutputPortReferences[i] >= 0;
 
                 outputBuffers[i] = new NativeSampleBuffer
                 {
                     Channels = (uint)output.Channels,
-                    Format = output.Format,
                     Initialized = initializeBuffer,
                 };
 
@@ -463,12 +432,11 @@ namespace Unity.Audio
 
         void SetupParameters()
         {
-            GrowableBuffer<Parameter> parameters = Parameters;
             NativeDSPParameter* jobParameters = JobDataBuffer->NativeJobData.Parameters;
 
             for (int i = 0; i < Parameters.Count; i++)
             {
-                Parameter param = parameters[i];
+                Parameter param = Parameters[i];
                 AudioKernelExtensions.DSPParameterDescription description = m_ParameterDescriptions.Descriptions[i];
                 jobParameters[i] = new NativeDSPParameter
                 {
@@ -482,24 +450,30 @@ namespace Unity.Audio
 
         void SetupSampleProviders()
         {
-            GrowableBuffer<GrowableBufferDescription> sampleProviders = SampleProviders;
             int globalProviderIdx = 0;
-            for (var itemIdx = 0; itemIdx < sampleProviders.Count; ++itemIdx)
+            for (var itemIdx = 0; itemIdx < m_SampleProviders.Count; ++itemIdx)
             {
-                GrowableBuffer<SampleProvider> nodeProviders = GrowableBuffer<SampleProvider>.FromDescription(sampleProviders[itemIdx]);
-                JobDataBuffer->NativeJobData.SampleProviderIndices[itemIdx] = (nodeProviders.Count == 0 ? -1 : globalProviderIdx);
-                for (var providerIdx = 0; providerIdx < nodeProviders.Count; ++providerIdx, ++globalProviderIdx)
-                    JobDataBuffer->NativeJobData.SampleProviders[globalProviderIdx] = nodeProviders[providerIdx].ProviderHandle;
+                JobDataBuffer->NativeJobData.SampleProviderIndices[itemIdx] = (m_SampleProviders[itemIdx].Count == 0 ? -1 : globalProviderIdx);
+                for (var providerIdx = 0; providerIdx < m_SampleProviders[itemIdx].Count; ++providerIdx, ++globalProviderIdx)
+                    JobDataBuffer->NativeJobData.SampleProviders[globalProviderIdx] = m_SampleProviders[itemIdx][providerIdx].ProviderHandle;
             }
         }
 
-        internal void Validate()
+        internal void ValidateReflectionData(void* jobReflectionData)
         {
-            if (!Valid)
-                throw new InvalidOperationException("Invalid node");
+            ValidateReflectionDataMono(jobReflectionData);
+            ValidateReflectionDataBurst(jobReflectionData);
         }
 
-        internal void ValidateReflectionData(void* jobReflectionData)
+        [BurstDiscard]
+        internal void ValidateReflectionDataMono(void* jobReflectionData)
+        {
+            if (jobReflectionData != JobReflectionData)
+                throw new InvalidOperationException("Mismatching DSPNode and IAudioKernel");
+        }
+
+        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        internal void ValidateReflectionDataBurst(void* jobReflectionData)
         {
             if (jobReflectionData != JobReflectionData)
                 throw new InvalidOperationException("Mismatching DSPNode and IAudioKernel");
@@ -507,14 +481,13 @@ namespace Unity.Audio
 
         internal void ValidateParameter(int parameter)
         {
-            if (parameter < 0 || parameter >= m_ParameterDescriptions.ParameterCount)
-                throw new ArgumentOutOfRangeException("parameter");
+            Utility.ValidateIndex(parameter, m_ParameterDescriptions.ParameterCount - 1);
         }
 
         internal void SetSampleProvider(int providerIndex, int subIndex, uint providerId, bool destroyOnRemove)
         {
-            var provider = GrowableBuffer<SampleProvider>.FromDescription(SampleProviders[providerIndex]);
-            var ownedProviders = OwnedSampleProviders;
+            var provider = m_SampleProviders[providerIndex];
+            var ownedProviders = m_OwnedSampleProviders;
 
             if (providerId == SampleProvider.InvalidProviderHandle)
             {
@@ -531,7 +504,7 @@ namespace Unity.Audio
 
         internal void InsertSampleProvider(int providerIndex, int subIndex, uint providerId, bool destroyOnRemove)
         {
-            var provider = GrowableBuffer<SampleProvider>.FromDescription(SampleProviders[providerIndex]);
+            var provider = m_SampleProviders[providerIndex];
             var newProvider = new SampleProvider {ProviderHandle = providerId};
 
             if (subIndex < 0)
@@ -540,24 +513,24 @@ namespace Unity.Audio
                 provider.Insert(subIndex, newProvider);
 
             if (destroyOnRemove)
-                OwnedSampleProviders.Add(providerId);
+                m_OwnedSampleProviders.Add(providerId);
         }
 
         internal void RemoveSampleProvider(int providerIndex, int subIndex)
         {
-            var provider = GrowableBuffer<SampleProvider>.FromDescription(SampleProviders[providerIndex]);
+            var provider = m_SampleProviders[providerIndex];
             var oldHandle = provider[subIndex].ProviderHandle;
 
-            if (OwnedSampleProviders.Remove(oldHandle))
+            if (m_OwnedSampleProviders.Remove(oldHandle))
                 AudioSampleProvider.InternalRemove(oldHandle);
             provider.RemoveAt(subIndex);
         }
 
+        // TODO: Remove wrapper struct?
         [StructLayout(LayoutKind.Sequential)]
         internal struct PortDescription
         {
             public int Channels;
-            public SoundFormat Format;
         }
 
         [StructLayout(LayoutKind.Sequential)]

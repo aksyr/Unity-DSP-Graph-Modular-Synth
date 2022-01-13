@@ -7,7 +7,7 @@ using Unity.Collections.LowLevel.Unsafe;
 using Unity.Burst;
 
 
-[BurstCompile]
+[BurstCompile(CompileSynchronously = true)]
 public struct SpectrumNode : IAudioKernel<SpectrumNode.Parameters, SpectrumNode.Providers>
 {
     public enum WindowType
@@ -43,7 +43,7 @@ public struct SpectrumNode : IAudioKernel<SpectrumNode.Parameters, SpectrumNode.
         SampleBuffer input = context.Inputs.GetSampleBuffer(0);
         Debug.Assert(input.Channels == 1);
         Debug.Assert(input.Samples == BUFFER_SIZE);
-        NativeArray<float> inputBuffer = input.Buffer;
+        NativeArray<float> inputBuffer = input.GetBuffer(0);
 
         WindowType windowType = (WindowType)math.round(context.Parameters.GetFloat(Parameters.Window, 0));
 

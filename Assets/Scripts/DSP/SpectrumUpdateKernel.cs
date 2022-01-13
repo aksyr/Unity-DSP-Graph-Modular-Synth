@@ -5,7 +5,7 @@ using Unity.Collections;
 using Unity.Burst;
 using Unity.Mathematics;
 
-[BurstCompile]
+[BurstCompile(CompileSynchronously = true)]
 public struct SpectrumUpdateKernel : IAudioKernelUpdate<SpectrumNode.Parameters, SpectrumNode.Providers, SpectrumNode>
 {
     private NativeArray<float2> _Buffer;

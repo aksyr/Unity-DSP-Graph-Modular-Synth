@@ -1,5 +1,5 @@
 using System;
-using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using AOT;
 using Unity.Burst;
@@ -8,7 +8,7 @@ using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
 using Unity.Mathematics;
 using Unity.Media.Utilities;
-using UnityEngine;
+using Debug = UnityEngine.Debug;
 
 namespace Unity.Audio
 {
@@ -18,59 +18,26 @@ namespace Unity.Audio
         internal readonly Handle Handle;
         private readonly DSPNode m_RootNode;
 
-        private readonly AtomicFreeListDescription m_HandleAllocator;
-        private AtomicFreeList<Handle.Node> HandleAllocator => AtomicFreeList<Handle.Node>.FromDescription(m_HandleAllocator);
+        private AtomicFreeList<Handle.Node> m_HandleAllocator;
+        private AtomicFreeList<ClearDSPNodeCommand> m_CommandAllocator;
+        private AtomicFreeList<DSPNode> m_TemporaryNodeAllocator;
+        private AtomicQueue<GrowableBuffer<IntPtr>> m_Commands;
+        private GrowableBuffer<DSPNodeUpdateRequestDescription> m_UpdateRequestHandles;
+        private GrowableBuffer<int> m_OwnedSampleProviders;
+        private GrowableBuffer<int> m_GraphTraversal;
+        private GrowableBuffer<IntPtr> m_TraversalDependencies;
+        private GrowableBuffer<DSPGraphExecutionNode> m_ExecutionBuffer;
+        private GrowableBuffer<int> m_TopologicalRoots;
+        private AtomicFreeList<GrowableBuffer<IntPtr>> m_CommandBufferAllocator;
+        private AtomicQueue<DSPNode> m_NodesPendingDisposal;
 
-        private readonly AtomicFreeListDescription m_CommandAllocator;
-        private AtomicFreeList<ClearDSPNodeCommand> CommandAllocator => AtomicFreeList<ClearDSPNodeCommand>.FromDescription(m_CommandAllocator);
-
-        private readonly AtomicFreeListDescription m_TemporaryNodeAllocator;
-        private AtomicFreeList<DSPNode> TemporaryNodeAllocator => AtomicFreeList<DSPNode>.FromDescription(m_TemporaryNodeAllocator);
-
-        private readonly AtomicFreeListDescription m_EventHandlerAllocator;
-        internal AtomicFreeList<EventHandlerDescription> EventHandlerAllocator => AtomicFreeList<EventHandlerDescription>.FromDescription(m_EventHandlerAllocator);
-
-        private readonly AtomicQueueDescription m_Commands;
-        private AtomicQueue<DSPCommand> Commands => AtomicQueue<DSPCommand>.FromDescription(m_Commands);
-
-        private readonly AtomicQueueDescription m_MainThreadCallbacks;
-        internal AtomicQueue<EventHandlerDescription> MainThreadCallbacks => AtomicQueue<EventHandlerDescription>.FromDescription(m_MainThreadCallbacks);
-
-        private readonly AtomicQueueDescription m_NodesPendingDisposal;
-        internal AtomicQueue<DSPNode> NodesPendingDisposal => AtomicQueue<DSPNode>.FromDescription(m_NodesPendingDisposal);
-
-        private readonly GrowableBufferDescription m_Nodes;
-        internal GrowableBuffer<DSPNode> Nodes => GrowableBuffer<DSPNode>.FromDescription(m_Nodes);
-
-        private readonly GrowableBufferDescription m_Connections;
-        internal GrowableBuffer<DSPConnection> Connections => GrowableBuffer<DSPConnection>.FromDescription(m_Connections);
-
-        private readonly GrowableBufferDescription m_ParameterKeys;
-        internal GrowableBuffer<DSPParameterKey> ParameterKeys => GrowableBuffer<DSPParameterKey>.FromDescription(m_ParameterKeys);
-
-        private readonly GrowableBufferDescription m_UpdateRequestHandles;
-        private GrowableBuffer<DSPNodeUpdateRequestDescription> UpdateRequestHandles => GrowableBuffer<DSPNodeUpdateRequestDescription>.FromDescription(m_UpdateRequestHandles);
-
-        private readonly GrowableBufferDescription m_OwnedSampleProviders;
-        private GrowableBuffer<int> OwnedSampleProviders => GrowableBuffer<int>.FromDescription(m_OwnedSampleProviders);
-
-        private readonly GrowableBufferDescription m_RootBuffer;
-        internal GrowableBuffer<float> RootBuffer => GrowableBuffer<float>.FromDescription(m_RootBuffer);
-
-        private readonly GrowableBufferDescription m_GraphTraversal;
-        private GrowableBuffer<int> GraphTraversal => GrowableBuffer<int>.FromDescription(m_GraphTraversal);
-
-        private readonly GrowableBufferDescription m_TraversalDependencies;
-        private GrowableBuffer<IntPtr> TraversalDependencies => GrowableBuffer<IntPtr>.FromDescription(m_TraversalDependencies);
-
-        private readonly GrowableBufferDescription m_EventHandlers;
-        internal GrowableBuffer<EventHandlerDescription> EventHandlers => GrowableBuffer<EventHandlerDescription>.FromDescription(m_EventHandlers);
-
-        private readonly GrowableBufferDescription m_ExecutionBuffer;
-        private GrowableBuffer<DSPGraphExecutionNode> ExecutionBuffer => GrowableBuffer<DSPGraphExecutionNode>.FromDescription(m_ExecutionBuffer);
-
-        private readonly GrowableBufferDescription m_TopologicalRoots;
-        private GrowableBuffer<int> TopologicalRoots => GrowableBuffer<int>.FromDescription(m_TopologicalRoots);
+        internal AtomicFreeList<EventHandlerDescription> EventHandlerAllocator;
+        internal AtomicQueue<EventHandlerDescription> MainThreadCallbacks;
+        internal GrowableBuffer<DSPNode> Nodes;
+        internal GrowableBuffer<DSPConnection> Connections;
+        internal GrowableBuffer<DSPParameterKey> ParameterKeys;
+        internal GrowableBuffer<float> RootBuffer;
+        internal GrowableBuffer<EventHandlerDescription> EventHandlers;
 
         private readonly int m_SampleRate;
         private readonly int m_DSPBufferSize;
@@ -109,33 +76,35 @@ namespace Unity.Audio
             *m_LastReadLength = 0;
             IsDriven = false;
             m_RootNode = default;
-            m_DisposeFunctionPointer = Marshal.GetFunctionPointerForDelegate(DSPGraphExtensions.DisposeMethod);;
+            m_DisposeFunctionPointer = Marshal.GetFunctionPointerForDelegate(DSPGraphExtensions.DisposeMethod);
             ProfilerMarkers = ProfilerMarkers.Create();
 
-            var handleAllocator = new AtomicFreeList<Handle.Node>(AllocationMode.Pooled);
-            m_HandleAllocator = handleAllocator.Description;
-            m_CommandAllocator = new AtomicFreeList<ClearDSPNodeCommand>(AllocationMode.Pooled).Description;
-            m_TemporaryNodeAllocator = new AtomicFreeList<DSPNode>(AllocationMode.Pooled).Description;
-            m_EventHandlerAllocator = new AtomicFreeList<EventHandlerDescription>(AllocationMode.Pooled).Description;
+            m_HandleAllocator = new AtomicFreeList<Handle.Node>(AllocationMode.Pooled);
+            m_CommandAllocator = new AtomicFreeList<ClearDSPNodeCommand>(AllocationMode.Pooled);
+            m_TemporaryNodeAllocator = new AtomicFreeList<DSPNode>(AllocationMode.Pooled);
+            EventHandlerAllocator = new AtomicFreeList<EventHandlerDescription>(AllocationMode.Pooled);
+            m_CommandBufferAllocator = new AtomicFreeList<GrowableBuffer<IntPtr>>(AllocationMode.Pooled);
 
-            m_Commands = AtomicQueue<DSPCommand>.Create().Description;
-            m_MainThreadCallbacks = AtomicQueue<EventHandlerDescription>.Create().Description;
-            m_NodesPendingDisposal = AtomicQueue<DSPNode>.Create().Description;
+            m_Commands = AtomicQueue<GrowableBuffer<IntPtr>>.Create();
+            MainThreadCallbacks = AtomicQueue<EventHandlerDescription>.Create();
+            m_NodesPendingDisposal = AtomicQueue<DSPNode>.Create();
 
-            m_Nodes = new GrowableBuffer<DSPNode>(Allocator.Persistent).Description;
-            m_Connections = new GrowableBuffer<DSPConnection>(Allocator.Persistent).Description;
-            m_ParameterKeys = new GrowableBuffer<DSPParameterKey>(Allocator.Persistent).Description;
-            m_UpdateRequestHandles = new GrowableBuffer<DSPNodeUpdateRequestDescription>(Allocator.Persistent).Description;
-            m_OwnedSampleProviders = new GrowableBuffer<int>(Allocator.Persistent).Description;
-            m_RootBuffer = new GrowableBuffer<float>(Allocator.Persistent, dspBufferSize * outputChannels).Description;
-            m_GraphTraversal = new GrowableBuffer<int>(Allocator.Persistent).Description;
-            m_TraversalDependencies = new GrowableBuffer<IntPtr>(Allocator.Persistent).Description;
-            m_EventHandlers = new GrowableBuffer<EventHandlerDescription>(Allocator.Persistent).Description;
-            m_ExecutionBuffer = new GrowableBuffer<DSPGraphExecutionNode>(Allocator.Persistent).Description;
-            m_TopologicalRoots = new GrowableBuffer<int>(Allocator.Persistent).Description;
+            Nodes = new GrowableBuffer<DSPNode>(Allocator.Persistent);
+            Connections = new GrowableBuffer<DSPConnection>(Allocator.Persistent);
+            ParameterKeys = new GrowableBuffer<DSPParameterKey>(Allocator.Persistent);
+            m_UpdateRequestHandles = new GrowableBuffer<DSPNodeUpdateRequestDescription>(Allocator.Persistent);
+            m_OwnedSampleProviders = new GrowableBuffer<int>(Allocator.Persistent);
+            RootBuffer = new GrowableBuffer<float>(Allocator.Persistent, dspBufferSize * outputChannels);
+            m_GraphTraversal = new GrowableBuffer<int>(Allocator.Persistent);
+            m_TraversalDependencies = new GrowableBuffer<IntPtr>(Allocator.Persistent);
+            EventHandlers = new GrowableBuffer<EventHandlerDescription>(Allocator.Persistent);
+            m_ExecutionBuffer = new GrowableBuffer<DSPGraphExecutionNode>(Allocator.Persistent);
+            m_TopologicalRoots = new GrowableBuffer<int>(Allocator.Persistent);
             m_UnsafeGraphBuffer = DSPGraphExtensions.UnsafeGraphBuffer;
 
-            Handle.Node* node = handleAllocator.Acquire();
+            //Handle.Node* node = m_HandleAllocator.Acquire();
+            Handle.Node* node = null;
+            m_HandleAllocator.Acquire(out node);
             node->Id = Handle.Node.InvalidId;
             Handle = new Handle(node);
             node->Id = DSPGraphExtensions.FindFreeGraphIndex();
@@ -156,7 +125,7 @@ namespace Unity.Audio
             m_RootNode = Nodes[0];
 
             // Root node gets an input port by default
-            AddPort(m_RootNode.Handle, outputChannels, outputFormat, PortType.Inlet);
+            AddPort(m_RootNode.Handle, outputChannels, PortType.Inlet);
         }
 
         [MonoPInvokeCallback(typeof(Trampoline))]
@@ -196,12 +165,11 @@ namespace Unity.Audio
             // Clean up dangling nodes
             DisposeDSPNode(m_RootNode.Handle, DisposeBehavior.DeallocateOnly);
 
-            var nodes = Nodes;
             var leakedNodeCount = 0;
             // Skip root node
-            for (int i = 1; i < nodes.Count; ++i)
+            for (int i = 1; i < Nodes.Count; ++i)
             {
-                var node = nodes[i];
+                var node = Nodes[i];
                 if (node.Valid)
                 {
                     ++leakedNodeCount;
@@ -229,35 +197,34 @@ namespace Unity.Audio
             Nodes.Dispose();
 
             // Dangling connection handles need to be released
-            var connections = Connections;
-            for (int i = 0; i < connections.Count; ++i)
-                if (connections[i].Valid)
-                    DisposeHandle(connections[i].Handle);
+            for (int i = 0; i < Connections.Count; ++i)
+                if (Connections[i].Valid)
+                    DisposeHandle(Connections[i].Handle);
             Connections.Dispose();
 
             // Dangling update requests need to be released
-            var requests = UpdateRequestHandles;
-            for (int i = 0; i < requests.Count; ++i)
-                if (requests[i].Handle.Valid)
-                    ReleaseUpdateRequest(requests[i].Handle);
-            UpdateRequestHandles.Dispose();
+            for (int i = 0; i < m_UpdateRequestHandles.Count; ++i)
+                if (m_UpdateRequestHandles[i].Handle.Valid)
+                    ReleaseUpdateRequest(m_UpdateRequestHandles[i].Handle);
+            m_UpdateRequestHandles.Dispose();
 
-            Commands.Dispose();
+            m_Commands.Dispose();
             MainThreadCallbacks.Dispose();
-            NodesPendingDisposal.Dispose();
+            m_NodesPendingDisposal.Dispose();
             ParameterKeys.Dispose();
-            OwnedSampleProviders.Dispose();
+            m_OwnedSampleProviders.Dispose();
             RootBuffer.Dispose();
-            GraphTraversal.Dispose();
-            TraversalDependencies.Dispose();
+            m_GraphTraversal.Dispose();
+            m_TraversalDependencies.Dispose();
             EventHandlers.Dispose();
-            ExecutionBuffer.Dispose();
-            TopologicalRoots.Dispose();
-            CommandAllocator.Dispose();
-            TemporaryNodeAllocator.Dispose();
+            m_ExecutionBuffer.Dispose();
+            m_TopologicalRoots.Dispose();
+            m_CommandAllocator.Dispose();
+            m_TemporaryNodeAllocator.Dispose();
             EventHandlerAllocator.Dispose();
+            m_CommandBufferAllocator.Dispose();
             DisposeHandle(Handle);
-            HandleAllocator.Dispose();
+            m_HandleAllocator.Dispose();
         }
 
         [BurstDiscard]
@@ -273,7 +240,9 @@ namespace Unity.Audio
         /// <returns>A new handle</returns>
         internal Handle AllocateHandle()
         {
-            Handle.Node* node = HandleAllocator.Acquire();
+            //Handle.Node* node = m_HandleAllocator.Acquire();
+            Handle.Node* node = null;
+            m_HandleAllocator.Acquire(out node);
             node->Id = Handle.Node.InvalidId;
             return new Handle(node);
         }
@@ -282,15 +251,17 @@ namespace Unity.Audio
             where T : unmanaged, IDSPCommand
         {
             ValidateCommandAllocation<T>();
-            return (T*)CommandAllocator.Acquire();
+            //return (T*)m_CommandAllocator.Acquire();
+            ClearDSPNodeCommand* cmd = null;
+            m_CommandAllocator.Acquire(out cmd);
+            return (T*)cmd;
         }
 
         private static void ValidateCommandAllocation<T>()
             where T : unmanaged
         {
             ValidateCommandAllocationWithMeaningfulMessage<T>();
-            if (UnsafeUtility.SizeOf<T>() > UnsafeUtility.SizeOf<ClearDSPNodeCommand>())
-                throw new ArgumentException("Command size is too large");
+            ValidateCommandAllocationBurst<T>();
         }
 
         [BurstDiscard]
@@ -301,12 +272,20 @@ namespace Unity.Audio
                 throw new ArgumentException($"Size of {typeof(T).FullName} is larger than allowed maximum {UnsafeUtility.SizeOf<ClearDSPNodeCommand>()}");
         }
 
+        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        private static void ValidateCommandAllocationBurst<T>()
+            where T : unmanaged
+        {
+            if (UnsafeUtility.SizeOf<T>() > UnsafeUtility.SizeOf<ClearDSPNodeCommand>())
+                throw new ArgumentException("Command size is too large");
+        }
+
         internal void ReleaseCommand(void* commandPointer)
         {
             DSPCommand.Dispose(commandPointer);
             ClearDSPNodeCommand* command = (ClearDSPNodeCommand*)commandPointer;
             *command = default;
-            CommandAllocator.Release(command);
+            m_CommandAllocator.Release(command);
         }
 
         /// <summary>
@@ -316,18 +295,22 @@ namespace Unity.Audio
         internal void DisposeHandle(Handle handle)
         {
             handle.FlushNode();
-            HandleAllocator.Release(handle.AtomicNode);
+            m_HandleAllocator.Release(handle.AtomicNode);
         }
 
         /// <summary>
         /// Add a set of commands to the graph's command queue (any thread)
         /// </summary>
         /// <param name="commands">The commands to add (IntPtrs that are really DSPCommand*)</param>
-        internal void ScheduleCommandBuffer(IList<IntPtr> commands)
+        internal void ScheduleCommandBuffer(GrowableBuffer<IntPtr> commands)
         {
-            var commandQueue = Commands;
-            for (int i = 0; i < commands.Count; ++i)
-                commandQueue.Enqueue((DSPCommand*)commands[i]);
+            //var description = m_CommandBufferAllocator.Acquire();
+            //*description = commands;
+            //m_Commands.Enqueue(description);
+            GrowableBuffer<IntPtr>* description = null;
+            m_CommandBufferAllocator.Acquire(out description);
+            *description = commands;
+            m_Commands.Enqueue(description);
         }
 
         /// <summary>
@@ -335,12 +318,16 @@ namespace Unity.Audio
         /// </summary>
         internal void ApplyScheduledCommands()
         {
-            var commandQueue = Commands;
-            while (!commandQueue.IsEmpty)
+            while (m_Commands.TryDequeue(out var commandBuffer))
             {
-                var command = commandQueue.Dequeue();
-                DSPCommand.Schedule(command);
-                ReleaseCommand(command);
+                for (var i = 0; i < commandBuffer->Count; ++i)
+                {
+                    var command = (DSPCommand*)(*commandBuffer)[i];
+                    DSPCommand.Schedule(command);
+                    ReleaseCommand(command);
+                }
+                commandBuffer->Dispose();
+                m_CommandBufferAllocator.Release(commandBuffer);
             }
         }
 
@@ -349,37 +336,41 @@ namespace Unity.Audio
         static void Attenuate(float* source, float* destination, float4 attenuation, int frames, int channels)
         {
             // FIXME: Per-channel attenuation for >4 channels?
-            var total = frames * channels;
-            for (int beginFrameOffset = 0; beginFrameOffset < total; beginFrameOffset += channels)
-                for (int channel = 0; channel < channels; ++channel)
-                    destination[beginFrameOffset + channel] += source[beginFrameOffset + channel] * attenuation[channel % 4];
+            int bufferIndex = 0;
+            for (int channel = 0; channel < channels; ++channel)
+                for (int frame = 0; frame < frames; ++frame, ++bufferIndex)
+                    destination[bufferIndex] = destination[bufferIndex] + (source[bufferIndex] * attenuation[channel % 4]);
         }
 
         static void AttenuateAndClear(float* source, float* destination, float4 attenuation, int frames, int channels)
         {
             // FIXME: Per-channel attenuation for >4 channels?
-            var total = frames * channels;
-            for (int beginFrameOffset = 0; beginFrameOffset < total; beginFrameOffset += channels)
-                for (int channel = 0; channel < channels; ++channel)
-                    destination[beginFrameOffset + channel] = source[beginFrameOffset + channel] * attenuation[channel % 4];
+            int bufferIndex = 0;
+            for (int channel = 0; channel < channels; ++channel)
+                for (int frame = 0; frame < frames; ++frame, ++bufferIndex)
+                    destination[bufferIndex] = source[bufferIndex] * attenuation[channel % 4];
         }
 
         private void ApplyInterpolatedAttenuation(DSPConnection connection, float* source, float* destination, int frames, int channels)
         {
             // FIXME: Per-channel attenuation for >4 channels?
-            DSPParameterKey* keys = ParameterKeys.UnsafeDataPointer;
+            DSPParameterKey* keys = *ParameterKeys.UnsafeDataPointer;
             var attenuation = connection.Attenuation;
-            float4 attenuationValue = 1f;
-            var connections = Connections;
+            var attenuationValues = stackalloc float4[frames];
 
             for (int frame = 0; frame < frames; ++frame)
             {
-                attenuationValue = DSPParameterInterpolator.Generate(frame, keys, attenuation.KeyIndex, DSPClock,
-                    DSPConnection.MinimumAttenuation, DSPConnection.MaximumAttenuation, attenuation.Value);
-                for (int channel = 0; channel < channels; ++channel)
+                attenuationValues[frame] = DSPParameterInterpolator.Generate(frame, keys, attenuation.KeyIndex,
+                    DSPClock, DSPConnection.MinimumAttenuation, DSPConnection.MaximumAttenuation, attenuation.Value);
+                destination[frame] = destination[frame] + (source[frame] * attenuationValues[frame][0]);
+            }
+
+            for (int channel = 1, baseFrame = frames; channel < channels; ++channel, baseFrame += frames)
+            {
+                for (int frame = 0; frame < frames; ++frame)
                 {
-                    var bufferIndex = frame * channels + channel;
-                    destination[bufferIndex] += source[bufferIndex] * attenuationValue[channel % 4];
+                    var bufferIndex = baseFrame + frame;
+                    destination[bufferIndex] = destination[bufferIndex] + (source[bufferIndex] * attenuationValues[frame][channel % 4]);
                 }
             }
 
@@ -387,27 +378,31 @@ namespace Unity.Audio
             connection.Attenuation = new DSPNode.Parameter
             {
                 KeyIndex = FreeParameterKeys(attenuation.KeyIndex, DSPClock + frames),
-                Value = attenuationValue,
+                Value = attenuationValues[frames - 1],
             };
-            connections[connection.Handle.Id] = connection;
+            Connections[connection.Handle.Id] = connection;
         }
 
         private void ApplyInterpolatedAttenuationAndClear(DSPConnection connection, float* source, float* destination, int frames, int channels)
         {
             // FIXME: Per-channel attenuation for >4 channels?
-            DSPParameterKey* keys = ParameterKeys.UnsafeDataPointer;
+            DSPParameterKey* keys = *ParameterKeys.UnsafeDataPointer;
             var attenuation = connection.Attenuation;
-            float4 attenuationValue = 1f;
-            var connections = Connections;
+            var attenuationValues = stackalloc float4[frames];
 
             for (int frame = 0; frame < frames; ++frame)
             {
-                attenuationValue = DSPParameterInterpolator.Generate(frame, keys, attenuation.KeyIndex, DSPClock,
-                    DSPConnection.MinimumAttenuation, DSPConnection.MaximumAttenuation, attenuation.Value);
-                for (int channel = 0; channel < channels; ++channel)
+                attenuationValues[frame] = DSPParameterInterpolator.Generate(frame, keys, attenuation.KeyIndex,
+                    DSPClock, DSPConnection.MinimumAttenuation, DSPConnection.MaximumAttenuation, attenuation.Value);
+                destination[frame] = source[frame] * attenuationValues[frame][0];
+            }
+
+            for (int channel = 1, baseFrame = frames; channel < channels; ++channel, baseFrame += frames)
+            {
+                for (int frame = 0; frame < frames; ++frame)
                 {
-                    var bufferIndex = frame * channels + channel;
-                    destination[bufferIndex] = source[bufferIndex] * attenuationValue[channel % 4];
+                    var bufferIndex = baseFrame + frame;
+                    destination[bufferIndex] = source[bufferIndex] * attenuationValues[frame][channel % 4];
                 }
             }
 
@@ -415,9 +410,9 @@ namespace Unity.Audio
             connection.Attenuation = new DSPNode.Parameter
             {
                 KeyIndex = FreeParameterKeys(attenuation.KeyIndex, DSPClock + frames),
-                Value = attenuationValue,
+                Value = attenuationValues[frames - 1],
             };
-            connections[connection.Handle.Id] = connection;
+            Connections[connection.Handle.Id] = connection;
         }
 
         bool MixAndCleanOutputIntoTargetBuffer(NativeSampleBuffer* peerOutputs, DSPConnection inputConnection, float* targetBuffer, int channels, int sampleFrameCount, bool clear)
@@ -433,30 +428,28 @@ namespace Unity.Audio
                 return true;
 
             var attenuation = inputConnection.Attenuation;
-            if (attenuation.KeyIndex != DSPParameterKey.NullIndex)
+            if (attenuation.KeyIndex == DSPParameterKey.NullIndex)
                 if (clear)
-                    ApplyInterpolatedAttenuationAndClear(inputConnection, sourceBuffer, targetBuffer, sampleFrameCount, channels);
+                    AttenuateAndClear(sourceBuffer, targetBuffer, attenuation.Value, sampleFrameCount, channels);
                 else
-                    ApplyInterpolatedAttenuation(inputConnection, sourceBuffer, targetBuffer, sampleFrameCount, channels);
+                    Attenuate(sourceBuffer, targetBuffer, attenuation.Value, sampleFrameCount, channels);
             else if (clear)
-                AttenuateAndClear(sourceBuffer, targetBuffer, attenuation.Value, sampleFrameCount, channels);
+                ApplyInterpolatedAttenuationAndClear(inputConnection, sourceBuffer, targetBuffer, sampleFrameCount, channels);
             else
-                Attenuate(sourceBuffer, targetBuffer, attenuation.Value, sampleFrameCount, channels);
+                ApplyInterpolatedAttenuation(inputConnection, sourceBuffer, targetBuffer, sampleFrameCount, channels);
             return true;
         }
 
         void MixJobInputs(DSPNode node)
         {
             ProfilerMarkers.MixNodeInputsMarker.Begin();
-            var nodes = Nodes;
-            var connections = Connections;
             var inputBuffers = node.JobDataBuffer->NativeJobData.InputBuffers;
             var sampleFrameCount = node.JobDataBuffer->NativeJobData.SampleReadCount;
 
             for (var inputConnectionIndex = node.InputConnectionIndex; inputConnectionIndex != DSPConnection.InvalidIndex;)
             {
-                var connection = connections[inputConnectionIndex];
-                var inputNode = nodes[connection.OutputNodeIndex];
+                var connection = Connections[inputConnectionIndex];
+                var inputNode = Nodes[connection.OutputNodeIndex];
                 var inputData = inputNode.JobDataBuffer;
 
                 var inputPortIndex = connection.InputPort;
@@ -504,22 +497,18 @@ namespace Unity.Audio
 
         void BuildTraversalCache(ExecutionMode executionMode)
         {
-            var graphTraversal = GraphTraversal;
-            var traversalDependencies = TraversalDependencies;
-            var nodes = Nodes;
             var dependencyCount = 0;
-            graphTraversal.CheckCapacity(nodes.Count);
+            m_GraphTraversal.CheckCapacity(Nodes.Count);
 
             // Clear port reference counts
-            for (int n = 0; n < nodes.Count; n++)
+            for (int n = 0; n < Nodes.Count; n++)
             {
-                var node = nodes[n];
+                var node = Nodes[n];
                 if (!node.Valid)
                     continue;
 
-                var outputPortReferences = node.OutputPortReferences;
                 for (int i = 0; i < node.Outputs.Count; i++)
-                    outputPortReferences[i] = 0;
+                    node.OutputPortReferences[i] = 0;
 
                 node.OutputReferences = 0;
             }
@@ -527,30 +516,28 @@ namespace Unity.Audio
             // Put unattached subtrees into the traversal array before the root node
             // so that their job fences are set up when it's time to set up the root node dependencies
             if (EnumHasFlags(executionMode, ExecutionMode.ExecuteNodesWithNoOutputs))
-
             {
-                var roots = TopologicalRoots;
-                roots.Clear();
-                for (int i = 1; i < nodes.Count; ++i)
+                m_TopologicalRoots.Clear();
+                for (int i = 1; i < Nodes.Count; ++i)
                 {
-                    if (nodes[i].Valid && nodes[i].IsTopologicalRoot)
+                    if (Nodes[i].Valid && Nodes[i].IsTopologicalRoot)
                     {
-                        roots.Add(i);
-                        dependencyCount += BuildTraversalCacheRecursive(nodes, Connections, graphTraversal, i, 0);
+                        m_TopologicalRoots.Add(i);
+                        dependencyCount += BuildTraversalCacheRecursive(Nodes, Connections, m_GraphTraversal, i, 0);
                     }
                 }
             }
 
-            dependencyCount += BuildTraversalCacheRecursive(nodes, Connections, graphTraversal, 0, 0);
-            traversalDependencies.CheckCapacity(dependencyCount + graphTraversal.Count);
+            dependencyCount += BuildTraversalCacheRecursive(Nodes, Connections, m_GraphTraversal, 0, 0);
+            m_TraversalDependencies.CheckCapacity(dependencyCount + m_GraphTraversal.Count);
         }
 
         private int BuildTraversalCacheRecursive(GrowableBuffer<DSPNode> nodes, GrowableBuffer<DSPConnection> connections, GrowableBuffer<int> graphTraversal, int nodeIndex, int portIndex)
         {
             var node = nodes[nodeIndex];
-            var outputPortReferences = node.OutputPortReferences;
 
-            outputPortReferences[portIndex]++;
+            if (node.OutputPortReferences.Count > 0)
+                node.OutputPortReferences[portIndex]++;
             if (node.OutputReferences++ > 0)
                 return 0;
 
@@ -573,46 +560,35 @@ namespace Unity.Audio
 
         private void BeginMixSynchronous()
         {
-            var nodes = Nodes;
-            var graphTraversal = GraphTraversal;
-
-            for (int i = 0; i < graphTraversal.Count; ++i)
-                RunJobForNode(nodes[graphTraversal[i]]);
+            for (int i = 0; i < m_GraphTraversal.Count; ++i)
+                RunJobForNode(Nodes[m_GraphTraversal[i]]);
         }
 
         private void BeginMixJobified(ExecutionMode executionMode)
         {
-            var graphTraversal = GraphTraversal;
-            var traversalDependencies = TraversalDependencies;
-            var nodes = Nodes;
-            var connections = Connections;
-            var executionBuffer = ExecutionBuffer;
-            executionBuffer.Clear();
-            executionBuffer.CheckCapacity(graphTraversal.Count);
-            traversalDependencies.Clear();
+            m_ExecutionBuffer.Clear();
+            m_ExecutionBuffer.CheckCapacity(m_GraphTraversal.Count);
+            m_TraversalDependencies.Clear();
 
-            for (int i = 0; i < graphTraversal.Count; ++i)
+            for (int i = 0; i < m_GraphTraversal.Count; ++i)
             {
-                var node = nodes[graphTraversal[i]];
-                var parentIndex = traversalDependencies.Count;
-                traversalDependencies.Add((IntPtr)node.JobFence);
+                var node = Nodes[m_GraphTraversal[i]];
+                var parentIndex = m_TraversalDependencies.Count;
+                m_TraversalDependencies.Add((IntPtr)node.JobFence);
                 var inputConnectionIndex = node.InputConnectionIndex;
                 while (inputConnectionIndex != DSPConnection.InvalidIndex)
                 {
-                    var conn = connections[inputConnectionIndex];
-                    traversalDependencies.Add((IntPtr)nodes[conn.OutputNodeIndex].JobFence);
+                    var conn = Connections[inputConnectionIndex];
+                    m_TraversalDependencies.Add((IntPtr)Nodes[conn.OutputNodeIndex].JobFence);
                     inputConnectionIndex = conn.NextInputConnectionIndex;
                 }
 
                 if (EnumHasFlags(executionMode, ExecutionMode.ExecuteNodesWithNoOutputs) && m_RootNode.Equals(node))
-                {
                     // Add topological roots as dependencies to the root node so that sync works properly
-                    var roots = TopologicalRoots;
-                    for (int rootIndex = 0; rootIndex < roots.Count; ++rootIndex)
-                        traversalDependencies.Add((IntPtr) nodes[roots[rootIndex]].JobFence);
-                }
+                    for (int rootIndex = 0; rootIndex < m_TopologicalRoots.Count; ++rootIndex)
+                        m_TraversalDependencies.Add((IntPtr)Nodes[m_TopologicalRoots[rootIndex]].JobFence);
 
-                executionBuffer.Add(new DSPGraphExecutionNode
+                m_ExecutionBuffer.Add(new DSPGraphExecutionNode
                 {
                     JobData = node.JobDataBuffer,
                     JobStructData = node.JobStructData,
@@ -620,15 +596,29 @@ namespace Unity.Audio
                     ResourceContext = node.ResourceContextHead,
                     FunctionIndex = 0,
                     FenceIndex = parentIndex,
-                    FenceCount = traversalDependencies.Count - parentIndex,
+                    FenceCount = m_TraversalDependencies.Count - parentIndex,
                 });
             }
 
             // TODO: Job batch scope
-            DSPGraphInternal.Internal_ScheduleGraph(default, executionBuffer.UnsafeDataPointer, executionBuffer.Count, null, traversalDependencies.UnsafeDataPointer);
+            DSPGraphInternal.Internal_ScheduleGraph(default, *m_ExecutionBuffer.UnsafeDataPointer, m_ExecutionBuffer.Count, null, *m_TraversalDependencies.UnsafeDataPointer);
         }
 
         private static void ValidateExecutionMode(ExecutionMode mode)
+        {
+            ValidateExecutionModeMono(mode);
+            ValidateExecutionModeBurst(mode);
+        }
+
+        [BurstDiscard]
+        private static void ValidateExecutionModeMono(ExecutionMode mode)
+        {
+            if (EnumHasFlags(mode, ExecutionMode.Jobified) == EnumHasFlags(mode, ExecutionMode.Synchronous))
+                throw new ArgumentException("Execution mode must contain exactly one of: Jobified, Synchronous");
+        }
+
+        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        private static void ValidateExecutionModeBurst(ExecutionMode mode)
         {
             if (EnumHasFlags(mode, ExecutionMode.Jobified) == EnumHasFlags(mode, ExecutionMode.Synchronous))
                 throw new ArgumentException("Execution mode must contain exactly one of: Jobified, Synchronous");
@@ -636,10 +626,9 @@ namespace Unity.Audio
 
         internal void CreateDSPNode(Handle nodeHandle, void* jobReflectionData, void* persistentStructMemory, AudioKernelExtensions.DSPParameterDescription* descriptions, int parameterCount, AudioKernelExtensions.DSPSampleProviderDescription* dspSampleProviderDescription, int sampleProviderCount)
         {
-            var nodes = Nodes;
             nodeHandle.Id = FindFreeNodeIndex();
             var node = new DSPNode(this, nodeHandle, *m_UnsafeGraphBuffer, jobReflectionData, persistentStructMemory, descriptions, parameterCount, dspSampleProviderDescription, sampleProviderCount);
-            nodes[nodeHandle.Id] = node;
+            Nodes[nodeHandle.Id] = node;
             ProfilerMarkers.AudioKernelInitializeMarker.Begin();
             DSPGraphInternal.Internal_InitializeJob(persistentStructMemory, jobReflectionData, node.ResourceContextHead);
             ProfilerMarkers.AudioKernelInitializeMarker.End();
@@ -647,22 +636,18 @@ namespace Unity.Audio
 
         private int FindFreeNodeIndex()
         {
-            var nodes = Nodes;
-            for (int i = 0; i < nodes.Count; ++i)
-                if (!nodes[i].Valid)
+            for (int i = 0; i < Nodes.Count; ++i)
+                if (!Nodes[i].Valid)
                     return i;
-            nodes.Add(default);
-            return nodes.Count - 1;
+            Nodes.Add(default);
+            return Nodes.Count - 1;
         }
 
         internal void ReleaseDSPNode(Handle nodeHandle)
         {
-            var nodes = Nodes;
             var id = nodeHandle.Id;
-            var node = nodes[id];
-
             DisposeHandle(nodeHandle);
-            nodes[id] = default;
+            Nodes[id] = default;
             TrashTraversalCache();
         }
 
@@ -671,17 +656,17 @@ namespace Unity.Audio
             var node = Nodes[nodeHandle.Id];
 
             // Disconnect connections before disposing
-            var connections = Connections;
             while (node.InputConnectionIndex != DSPConnection.InvalidIndex)
-                Disconnect(connections[node.InputConnectionIndex]);
+                Disconnect(Connections[node.InputConnectionIndex]);
             while (node.OutputConnectionIndex != DSPConnection.InvalidIndex)
-                Disconnect(connections[node.OutputConnectionIndex]);
+                Disconnect(Connections[node.OutputConnectionIndex]);
 
             ReleaseDSPNode(nodeHandle);
 
-            DSPNode* temporaryNode = TemporaryNodeAllocator.Acquire();
+            //DSPNode* temporaryNode = m_TemporaryNodeAllocator.Acquire();
+            m_TemporaryNodeAllocator.Acquire(out DSPNode* temporaryNode);
             *temporaryNode = node;
-            NodesPendingDisposal.Enqueue(temporaryNode);
+            m_NodesPendingDisposal.Enqueue(temporaryNode);
         }
 
         internal void RunDSPNodeDisposeJob(DSPNode node)
@@ -715,17 +700,16 @@ namespace Unity.Audio
             return LookupNode(node.Id);
         }
 
-        public int FreeParameterKeys(int keyIndex, long upperClockLimit = long.MaxValue)
+        internal int FreeParameterKeys(int keyIndex, long upperClockLimit = long.MaxValue)
         {
-            var keys = ParameterKeys;
             while (keyIndex != DSPParameterKey.NullIndex)
             {
-                var key = keys[keyIndex];
+                var key = ParameterKeys[keyIndex];
                 if (key.DSPClock > upperClockLimit)
                     return keyIndex;
                 var oldKeyIndex = keyIndex;
                 keyIndex = key.NextKeyIndex;
-                keys[oldKeyIndex] = DSPParameterKey.Default;
+                ParameterKeys[oldKeyIndex] = DSPParameterKey.Default;
             }
 
             return DSPParameterKey.NullIndex;
@@ -742,8 +726,7 @@ namespace Unity.Audio
 
         void SetParameter(DSPNode node, int parameterIndex, float4 value, uint interpolationLength)
         {
-            var parameters = node.Parameters;
-            var parameter = parameters[parameterIndex];
+            var parameter = node.Parameters[parameterIndex];
 
             FreeParameterKeys(parameter.KeyIndex);
 
@@ -755,19 +738,15 @@ namespace Unity.Audio
                 };
             else
                 parameter.KeyIndex = AppendKey(DSPParameterKey.NullIndex, DSPParameterKey.NullIndex, Math.Max(interpolationLength + DSPClock, 1) - 1, value);
-            parameters[parameterIndex] = parameter;
+            node.Parameters[parameterIndex] = parameter;
         }
 
         internal int AppendKey(int keyIndex, int afterKeyIndex, long dspClock, float4 value)
         {
-            var keys = ParameterKeys;
-            if (keyIndex == DSPParameterKey.NullIndex && afterKeyIndex != DSPParameterKey.NullIndex)
-                throw new ArgumentException("Trying to append a key to a mismatching parameter");
-            if (keyIndex != DSPParameterKey.NullIndex && afterKeyIndex == DSPParameterKey.NullIndex)
-                throw new ArgumentException("Trying to insert the first key to a parameter that already has keys");
+            ValidateKeyIndicesForAppend(keyIndex, afterKeyIndex);
 
             var newIndex = FindFreeParameterKeyIndex();
-            keys[newIndex] = new DSPParameterKey
+            ParameterKeys[newIndex] = new DSPParameterKey
             {
                 InUse = true,
                 DSPClock = dspClock,
@@ -777,22 +756,45 @@ namespace Unity.Audio
 
             if (afterKeyIndex != DSPParameterKey.NullIndex)
             {
-                var afterKey = keys[afterKeyIndex];
+                var afterKey = ParameterKeys[afterKeyIndex];
                 afterKey.NextKeyIndex = newIndex;
-                keys[afterKeyIndex] = afterKey;
+                ParameterKeys[afterKeyIndex] = afterKey;
             }
 
             return newIndex;
         }
 
+        private void ValidateKeyIndicesForAppend(int keyIndex, int afterKeyIndex)
+        {
+            ValidateKeyIndicesForAppendMono(keyIndex, afterKeyIndex);
+            ValidateKeyIndicesForAppendBurst(keyIndex, afterKeyIndex);
+        }
+
+        [BurstDiscard]
+        private void ValidateKeyIndicesForAppendMono(int keyIndex, int afterKeyIndex)
+        {
+            if (keyIndex == DSPParameterKey.NullIndex && afterKeyIndex != DSPParameterKey.NullIndex)
+                throw new ArgumentException("Trying to append a key to a mismatching parameter");
+            if (keyIndex != DSPParameterKey.NullIndex && afterKeyIndex == DSPParameterKey.NullIndex)
+                throw new ArgumentException("Trying to insert the first key to a parameter that already has keys");
+        }
+
+        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        private void ValidateKeyIndicesForAppendBurst(int keyIndex, int afterKeyIndex)
+        {
+            if (keyIndex == DSPParameterKey.NullIndex && afterKeyIndex != DSPParameterKey.NullIndex)
+                throw new ArgumentException("Trying to append a key to a mismatching parameter");
+            if (keyIndex != DSPParameterKey.NullIndex && afterKeyIndex == DSPParameterKey.NullIndex)
+                throw new ArgumentException("Trying to insert the first key to a parameter that already has keys");
+        }
+
         private int FindFreeParameterKeyIndex()
         {
-            var keys = ParameterKeys;
-            for (int i = 0; i < keys.Count; ++i)
-                if (!keys[i].InUse)
+            for (int i = 0; i < ParameterKeys.Count; ++i)
+                if (!ParameterKeys[i].InUse)
                     return i;
-            keys.Add(DSPParameterKey.Default);
-            return keys.Count - 1;
+            ParameterKeys.Add(DSPParameterKey.Default);
+            return ParameterKeys.Count - 1;
         }
 
         internal void AddFloatKey(Handle nodeHandle, void* jobReflectionData, int parameterIndex, long dspClock, float4 value, DSPParameterKeyType type)
@@ -803,15 +805,14 @@ namespace Unity.Audio
             node.ValidateParameter(parameterIndex);
             ValidateDSPClock(dspClock);
 
-            var parameters = node.Parameters;
-            var parameter = parameters[parameterIndex];
+            var parameter = node.Parameters[parameterIndex];
             int lastKeyIndex = GetLastParameterKeyIndex(parameter.KeyIndex, dspClock);
             var lastKey = (lastKeyIndex == DSPParameterKey.NullIndex) ? DSPParameterKey.Default : ParameterKeys[lastKeyIndex];
 
-            if (lastKey.InUse && lastKey.DSPClock >= dspClock)
-                throw new InvalidOperationException("Adding non-consecutive key to parameter");
+            ValidateConsecutiveParameterKey(lastKey, dspClock);
 
-            float4 keyValue;
+            float4 keyValue = default;
+            Utility.ValidateIndex((int)type, (int)DSPParameterKeyType.Sustain, (int)DSPParameterKeyType.Value);
             switch (type)
             {
                 case DSPParameterKeyType.Value:
@@ -821,13 +822,13 @@ namespace Unity.Audio
                     keyValue = lastKey.InUse ? lastKey.Value : parameter.Value;
                     break;
                 default:
-                    throw new ArgumentOutOfRangeException(nameof(type), type, null);
+                    break;
             }
             var keyIndex = AppendKey(parameter.KeyIndex, lastKeyIndex, dspClock, keyValue);
             if (parameter.KeyIndex == DSPParameterKey.NullIndex)
             {
                 parameter.KeyIndex = keyIndex;
-                parameters[parameterIndex] = parameter;
+                node.Parameters[parameterIndex] = parameter;
             }
         }
 
@@ -836,13 +837,12 @@ namespace Unity.Audio
             if (parameterKeyIndex == DSPParameterKey.NullIndex)
                 return DSPParameterKey.NullIndex;
 
-            var keys = ParameterKeys;
-            if (parameterKeyIndex > keys.Count)
+            if (parameterKeyIndex > ParameterKeys.Count)
                 return DSPParameterKey.NullIndex;
 
             while (true)
             {
-                var key = keys[parameterKeyIndex];
+                var key = ParameterKeys[parameterKeyIndex];
                 if (!key.InUse)
                     return DSPParameterKey.NullIndex;
                 if (key.DSPClock >= upperClockLimit || key.NextKeyIndex == DSPParameterKey.NullIndex)
@@ -854,8 +854,7 @@ namespace Unity.Audio
         private void ValidateDSPClock(long dspClock)
         {
             ValidateDSPClockWithMeaningfulMessage(dspClock);
-            if (dspClock < 0 || dspClock < DSPClock)
-                throw new InvalidOperationException("DSP clock value is in the past");
+            ValidateDSPClockBurst(dspClock);
         }
 
         [BurstDiscard]
@@ -863,6 +862,13 @@ namespace Unity.Audio
         {
             if (dspClock < 0 || dspClock < DSPClock)
                 throw new InvalidOperationException($"DSP clock value {dspClock} is in the past");
+        }
+
+        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        private void ValidateDSPClockBurst(long dspClock)
+        {
+            if (dspClock < 0 || dspClock < DSPClock)
+                throw new InvalidOperationException("DSP clock value is in the past");
         }
 
         internal enum DSPParameterKeyType
@@ -873,17 +879,15 @@ namespace Unity.Audio
 
         internal void Connect(Handle sourceHandle, int outputPort, Handle destinationHandle, int inputPort, Handle connectionHandle)
         {
-            var nodes = Nodes;
-            var connections = Connections;
-            var destination = nodes[destinationHandle.Id];
-            var source = nodes[sourceHandle.Id];
+            var destination = Nodes[destinationHandle.Id];
+            var source = Nodes[sourceHandle.Id];
 
             ValidateConnectionRequest(source, outputPort, destination, inputPort);
 
             int freeIndex = FindFreeConnectionIndex();
             connectionHandle.Id = freeIndex;
 
-            connections[freeIndex] = new DSPConnection
+            Connections[freeIndex] = new DSPConnection
             {
                 Graph = Handle,
                 Handle = connectionHandle,
@@ -912,47 +916,23 @@ namespace Unity.Audio
 
         private void TrashTraversalCache()
         {
-            GraphTraversal.Clear();
-            TraversalDependencies.Clear();
+            m_GraphTraversal.Clear();
+            m_TraversalDependencies.Clear();
         }
 
         private int FindFreeConnectionIndex()
         {
-            var connections = Connections;
-            for (int i = 0; i < connections.Count; ++i)
-                if (!connections[i].Valid)
+            for (int i = 0; i < Connections.Count; ++i)
+                if (!Connections[i].Valid)
                     return i;
-            connections.Add(default);
-            return connections.Count - 1;
+            Connections.Add(default);
+            return Connections.Count - 1;
         }
 
         private void ValidateConnectionRequest(DSPNode source, int outputPort, DSPNode destination, int inputPort)
         {
             ValidateConnectionRequestWithMeaningfulMessages(source, outputPort, destination, inputPort);
-            if (!source.Valid || !destination.Valid)
-                throw new ArgumentException("Invalid DSPNode");
-
-            var outputs = source.Outputs;
-            var inputs = destination.Inputs;
-
-            if (outputPort >= outputs.Count)
-                throw new ArgumentOutOfRangeException("outputPort");
-            if (inputPort >= inputs.Count)
-                throw new ArgumentOutOfRangeException("inputPort");
-
-            var outputDesc = outputs[outputPort];
-            var inputDesc = inputs[inputPort];
-
-            if (outputDesc.Channels != inputDesc.Channels || outputDesc.Format != inputDesc.Format)
-                throw new InvalidOperationException("Trying to connect incompatible DSP ports together");
-
-            if (FindConnectionIndex(source.Handle.Id, outputPort, destination.Handle.Id, inputPort) != DSPConnection.InvalidIndex)
-                throw new InvalidOperationException("Trying to make DSPNode connection that already exists");
-
-            // If there is already a path from destination to source,
-            // then making this connection will create a cycle
-            if (ContainsPath(destination, source))
-                throw new InvalidOperationException("Trying to connect two nodes that would result in a DSP cycle");
+            ValidateConnectionRequestBurst(source, outputPort, destination, inputPort);
         }
 
         [BurstDiscard]
@@ -975,9 +955,46 @@ namespace Unity.Audio
             var outputDesc = outputs[outputPort];
             var inputDesc = inputs[inputPort];
 
-            if (outputDesc.Channels != inputDesc.Channels || outputDesc.Format != inputDesc.Format)
+            if (outputDesc.Channels != inputDesc.Channels)
                 throw new InvalidOperationException(
-                    $"Trying to connect incompatible DSP ports together\nInput: {inputDesc.Channels} channels, format {inputDesc.Format}\nOutput: {outputDesc.Channels} channels, format {outputDesc.Format}");
+                    $"Trying to connect incompatible DSP ports together\nInput: {inputDesc.Channels} channels\nOutput: {outputDesc.Channels} channels");
+
+            if (FindConnectionIndex(source.Handle.Id, outputPort, destination.Handle.Id, inputPort) != DSPConnection.InvalidIndex)
+                throw new InvalidOperationException("Trying to make DSPNode connection that already exists");
+
+            // If there is already a path from destination to source,
+            // then making this connection will create a cycle
+            if (ContainsPath(destination, source))
+                throw new InvalidOperationException("Trying to connect two nodes that would result in a DSP cycle");
+        }
+
+        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        private void ValidateConnectionRequestBurst(DSPNode source, int outputPort, DSPNode destination, int inputPort)
+        {
+            if (!source.Valid || !destination.Valid)
+                throw new ArgumentException("Invalid DSPNode");
+
+            var outputs = source.Outputs;
+            var inputs = destination.Inputs;
+
+            if (outputPort >= outputs.Count)
+                throw new ArgumentOutOfRangeException("outputPort");
+            if (inputPort >= inputs.Count)
+                throw new ArgumentOutOfRangeException("inputPort");
+
+            var outputDesc = outputs[outputPort];
+            var inputDesc = inputs[inputPort];
+
+            if (outputDesc.Channels != inputDesc.Channels)
+                throw new InvalidOperationException("Trying to connect incompatible DSP ports together");
+
+            if (FindConnectionIndex(source.Handle.Id, outputPort, destination.Handle.Id, inputPort) != DSPConnection.InvalidIndex)
+                throw new InvalidOperationException("Trying to make DSPNode connection that already exists");
+
+            // If there is already a path from destination to source,
+            // then making this connection will create a cycle
+            if (ContainsPath(destination, source))
+                throw new InvalidOperationException("Trying to connect two nodes that would result in a DSP cycle");
         }
 
         /// <summary>
@@ -989,15 +1006,12 @@ namespace Unity.Audio
             if (source.Equals(destination))
                 return true;
 
-            var connections = Connections;
-            var nodes = Nodes;
-
             // Check all output connections from source for a path to destination
             var outputConnectionIndex = source.OutputConnectionIndex;
             while (outputConnectionIndex != DSPConnection.InvalidIndex)
             {
-                var outgoingConnection = connections[outputConnectionIndex];
-                if (ContainsPath(nodes[outgoingConnection.InputNodeIndex], destination))
+                var outgoingConnection = Connections[outputConnectionIndex];
+                if (ContainsPath(Nodes[outgoingConnection.InputNodeIndex], destination))
                     return true;
 
                 outputConnectionIndex = outgoingConnection.NextOutputConnectionIndex;
@@ -1009,10 +1023,9 @@ namespace Unity.Audio
 
         internal int FindConnectionIndex(int sourceNodeIndex, int outputPort, int destinationNodeIndex, int inputPort)
         {
-            var connections = Connections;
-            for (int i = 0; i < connections.Count; ++i)
+            for (int i = 0; i < Connections.Count; ++i)
             {
-                var connection = connections[i];
+                var connection = Connections[i];
                 if (connection.Valid &&
                     connection.InputNodeIndex == destinationNodeIndex &&
                     connection.OutputNodeIndex == sourceNodeIndex &&
@@ -1040,16 +1053,10 @@ namespace Unity.Audio
 
         void Disconnect(DSPConnection connection)
         {
-            var connections = Connections;
-            var nodes = Nodes;
             var disconnectionIndex = connection.Handle.Id;
+            ValidateConnectionForDisconnect(connection, Nodes);
 
-            if (connection.InputNodeIndex >= nodes.Count || connection.OutputNodeIndex >= nodes.Count)
-                throw new InvalidOperationException("Invalid topology");
-            if (!connection.Valid)
-                throw new InvalidOperationException("Connection is not in use");
-
-            var input = nodes[connection.InputNodeIndex];
+            var input = Nodes[connection.InputNodeIndex];
             if (input.Valid)
             {
                 if (disconnectionIndex == input.InputConnectionIndex)
@@ -1057,22 +1064,21 @@ namespace Unity.Audio
                 else
                 {
                     var index = input.InputConnectionIndex;
-                    var cursor = connections[index];
+                    var cursor = Connections[index];
 
                     while (cursor.NextInputConnectionIndex != disconnectionIndex)
                     {
                         index = cursor.NextInputConnectionIndex;
-                        if (index == DSPConnection.InvalidIndex)
-                            throw new InvalidOperationException("Invalid topology");
-                        cursor = connections[index];
+                        ValidateConnectionIndex(index);
+                        cursor = Connections[index];
                     }
 
                     cursor.NextInputConnectionIndex = connection.NextInputConnectionIndex;
-                    connections[index] = cursor;
+                    Connections[index] = cursor;
                 }
             }
 
-            var output = nodes[connection.OutputNodeIndex];
+            var output = Nodes[connection.OutputNodeIndex];
             if (output.Valid)
             {
                 if (disconnectionIndex == output.OutputConnectionIndex)
@@ -1080,23 +1086,66 @@ namespace Unity.Audio
                 else
                 {
                     var index = output.OutputConnectionIndex;
-                    var cursor = connections[index];
+                    var cursor = Connections[index];
 
                     while (cursor.NextOutputConnectionIndex != disconnectionIndex)
                     {
                         index = cursor.NextOutputConnectionIndex;
-                        if (index == DSPConnection.InvalidIndex)
-                            throw new InvalidOperationException("Invalid topology");
-                        cursor = connections[index];
+                        ValidateConnectionIndex(index);
+                        cursor = Connections[index];
                     }
 
                     cursor.NextOutputConnectionIndex = connection.NextOutputConnectionIndex;
-                    connections[index] = cursor;
+                    Connections[index] = cursor;
                 }
             }
 
             DisposeHandle(connection.Handle);
-            connections[disconnectionIndex] = default;
+            Connections[disconnectionIndex] = default;
+        }
+
+        private void ValidateConnectionForDisconnect(DSPConnection connection, GrowableBuffer<DSPNode> nodes)
+        {
+            ValidateConnectionForDisconnectMono(connection, nodes);
+            ValidateConnectionForDisconnectBurst(connection, nodes);
+        }
+
+        [BurstDiscard]
+        private void ValidateConnectionForDisconnectMono(DSPConnection connection, GrowableBuffer<DSPNode> nodes)
+        {
+            if (connection.InputNodeIndex >= nodes.Count || connection.OutputNodeIndex >= nodes.Count)
+                throw new InvalidOperationException("Invalid topology");
+            if (!connection.Valid)
+                throw new InvalidOperationException("Connection is not in use");
+        }
+
+        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        private void ValidateConnectionForDisconnectBurst(DSPConnection connection, GrowableBuffer<DSPNode> nodes)
+        {
+            if (connection.InputNodeIndex >= nodes.Count || connection.OutputNodeIndex >= nodes.Count)
+                throw new InvalidOperationException("Invalid topology");
+            if (!connection.Valid)
+                throw new InvalidOperationException("Connection is not in use");
+        }
+
+        private void ValidateConnectionIndex(int index)
+        {
+            ValidateConnectionIndexMono(index);
+            ValidateConnectionIndexBurst(index);
+        }
+
+        [BurstDiscard]
+        private void ValidateConnectionIndexMono(int index)
+        {
+            if (index == DSPConnection.InvalidIndex)
+                throw new InvalidOperationException("Invalid topology");
+        }
+
+        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        private void ValidateConnectionIndexBurst(int index)
+        {
+            if (index == DSPConnection.InvalidIndex)
+                throw new InvalidOperationException("Invalid topology");
         }
 
         internal DSPConnection LookupConnection(Handle connectionHandle)
@@ -1108,12 +1157,27 @@ namespace Unity.Audio
 
         static void ValidateConnectionHandle(Handle connectionHandle, int connectionHandleCount)
         {
+            ValidateConnectionHandleMono(connectionHandle, connectionHandleCount);
+            ValidateConnectionHandleBurst(connectionHandle, connectionHandleCount);
+        }
+
+        [BurstDiscard]
+        static void ValidateConnectionHandleMono(Handle connectionHandle, int connectionHandleCount)
+        {
+            if (!connectionHandle.Valid || connectionHandle.Id < 0 || connectionHandle.Id >= connectionHandleCount)
+                throw new ArgumentException("Invalid connection");
+        }
+
+        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        static void ValidateConnectionHandleBurst(Handle connectionHandle, int connectionHandleCount)
+        {
             if (!connectionHandle.Valid || connectionHandle.Id < 0 || connectionHandle.Id >= connectionHandleCount)
                 throw new ArgumentException("Invalid connection");
         }
 
         static float4 FromBuffer(float* buffer, int dimension)
         {
+            Utility.ValidateIndex(dimension, 4, 1);
             switch (dimension)
             {
                 case 1:
@@ -1126,24 +1190,22 @@ namespace Unity.Audio
                 case 4:
                     return math.float4(buffer[0], buffer[1], buffer[2], buffer[3]);
                 default:
-                    throw new ArgumentOutOfRangeException("dimension");
+                    return default;
             }
         }
 
         internal void SetAttenuation(Handle connectionHandle, float* values, byte dimension, uint interpolationLength)
         {
-            var connections = Connections;
-            var connection = connections[connectionHandle.Id];
+            var connection = Connections[connectionHandle.Id];
             var keyIndex = connection.Attenuation.KeyIndex;
             var previousValue = (keyIndex == DSPParameterKey.NullIndex)
                 ? connection.Attenuation.Value
-                : DSPParameterInterpolator.Generate(0, ParameterKeys.UnsafeDataPointer, keyIndex, DSPClock,
-                    DSPConnection.MinimumAttenuation, DSPConnection.MaximumAttenuation, connection.Attenuation.Value);
+                : DSPParameterInterpolator.Generate(0, *ParameterKeys.UnsafeDataPointer, keyIndex, DSPClock,
+                DSPConnection.MinimumAttenuation, DSPConnection.MaximumAttenuation, connection.Attenuation.Value);
 
             FreeParameterKeys(keyIndex);
 
-            if (dimension > 4)
-                throw new NotImplementedException("Attenuation buffers larger than 4 are not implemented");
+            Utility.ValidateIndex(dimension, 4);
 
             float4 newValue = FromBuffer(values, dimension);
             if (interpolationLength == 0)
@@ -1161,23 +1223,20 @@ namespace Unity.Audio
                 KeyIndex = keyIndex,
                 Value = newValue,
             };
-            connections[connectionHandle.Id] = connection;
+            Connections[connectionHandle.Id] = connection;
         }
 
         internal void AddAttenuationKey(Handle connectionHandle, float* values, byte dimension, long dspClock)
         {
-            var connections = Connections;
-            var connection = connections[connectionHandle.Id];
+            var connection = Connections[connectionHandle.Id];
             var keyIndex = connection.Attenuation.KeyIndex;
 
-            if (dimension > 4)
-                throw new NotImplementedException("Attenuation buffers larger than 4 are not implemented");
+            Utility.ValidateIndex(dimension, 4);
             float4 value = FromBuffer(values, dimension);
 
             int lastKeyIndex = GetLastParameterKeyIndex(keyIndex, dspClock);
             var lastKey = (lastKeyIndex == DSPParameterKey.NullIndex) ? DSPParameterKey.Default : ParameterKeys[lastKeyIndex];
-            if (lastKey.InUse && lastKey.DSPClock >= dspClock)
-                throw new InvalidOperationException("Adding non-consecutive key to parameter");
+            ValidateConsecutiveParameterKey(lastKey, dspClock);
 
             var newKeyIndex = AppendKey(keyIndex, lastKeyIndex, dspClock, value);
             if (keyIndex != DSPParameterKey.NullIndex)
@@ -1188,7 +1247,7 @@ namespace Unity.Audio
                 KeyIndex = newKeyIndex,
                 Value = connection.Attenuation.Value,
             };
-            connections[connectionHandle.Id] = connection;
+            Connections[connectionHandle.Id] = connection;
         }
 
         internal void SustainAttenuation(Handle connectionHandle, long dspClock)
@@ -1198,28 +1257,45 @@ namespace Unity.Audio
             int lastKeyIndex = GetLastParameterKeyIndex(connection.Attenuation.KeyIndex, dspClock);
             var lastKey = (lastKeyIndex == DSPParameterKey.NullIndex) ? DSPParameterKey.Default : ParameterKeys[lastKeyIndex];
 
-            if (lastKey.InUse && lastKey.DSPClock >= dspClock)
-                throw new InvalidOperationException("Adding non-consecutive key to parameter");
+            ValidateConsecutiveParameterKey(lastKey, dspClock);
 
             var sustainValue = lastKey.InUse ? lastKey.Value.x : connection.Attenuation.Value.x;
             AppendKey(connection.Attenuation.KeyIndex, lastKeyIndex, dspClock, sustainValue);
         }
 
-        internal void AddPort(Handle nodeHandle, int channelCount, SoundFormat format, PortType type)
+        private void ValidateConsecutiveParameterKey(DSPParameterKey lastKey, long dspClock)
         {
-            if (!nodeHandle.Alive)
-                throw new ArgumentException("Cannot add port to inactive node", nameof(nodeHandle));
+            ValidateConsecutiveParameterKeyMono(lastKey, dspClock);
+            ValidateConsecutiveParameterKeyBurst(lastKey, dspClock);
+        }
+
+        [BurstDiscard]
+        private void ValidateConsecutiveParameterKeyMono(DSPParameterKey lastKey, long dspClock)
+        {
+            if (lastKey.InUse && lastKey.DSPClock >= dspClock)
+                throw new InvalidOperationException("Adding non-consecutive key to parameter");
+        }
+
+        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        private void ValidateConsecutiveParameterKeyBurst(DSPParameterKey lastKey, long dspClock)
+        {
+            if (lastKey.InUse && lastKey.DSPClock >= dspClock)
+                throw new InvalidOperationException("Adding non-consecutive key to parameter");
+        }
+
+        internal void AddPort(Handle nodeHandle, int channelCount, PortType type)
+        {
+            ValidateNodeHandleForPortAddition(nodeHandle);
 
             var node = Nodes[nodeHandle.Id];
-            if (m_RootNode.Equals(node) && (type == PortType.Outlet || node.Inputs.Count > 0))
-                throw new ArgumentException("Cannot add ports to the root node");
+            RejectRootNodePortAddition(node, type);
 
             var port = new DSPNode.PortDescription
             {
                 Channels = channelCount,
-                Format = format,
             };
 
+            Utility.ValidateIndex((int)type, (int)PortType.Outlet, (int)PortType.Inlet);
             switch (type)
             {
                 case PortType.Inlet:
@@ -1230,51 +1306,48 @@ namespace Unity.Audio
                     node.OutputPortReferences.Add(0);
                     break;
                 default:
-                    throw new ArgumentOutOfRangeException(nameof(type), type, "Invalid port type");
+                    break;
             }
         }
 
-        internal void RemovePort(Handle nodeHandle, int portIndex, PortType type)
+        void ValidateNodeHandleForPortAddition(Handle nodeHandle)
         {
-            if(!nodeHandle.Alive)
-                throw new ArgumentException("Cannot remove port from inactive node", nameof(nodeHandle));
+            ValidateNodeHandleForPortAdditionMono(nodeHandle);
+            ValidateNodeHandleForPortAdditionBurst(nodeHandle);
+        }
 
-            var node = Nodes[nodeHandle.Id];
-            if(m_RootNode.Equals(node))
-                throw new ArgumentException("Cannot remove ports from the root node");
+        [BurstDiscard]
+        void ValidateNodeHandleForPortAdditionMono(Handle nodeHandle)
+        {
+            if (!nodeHandle.Alive)
+                throw new ArgumentException("Cannot add port to inactive node", nameof(nodeHandle));
+        }
 
-            switch (type)
-            {
-                case PortType.Inlet:
-                    {
-                        var connections = Connections;
-                        for (int i = connections.Count - 1; i >= 0; --i)
-                        {
-                            if (connections[i].InputPort == portIndex)
-                            {
-                                Disconnect(connections[i]);
-                            }
-                        }
-                        node.Inputs.RemoveAt(portIndex);
-                        break;
-                    }
-                case PortType.Outlet:
-                    {
-                        var connections = Connections;
-                        for (int i = connections.Count - 1; i >= 0; --i)
-                        {
-                            if (connections[i].OutputPort == portIndex)
-                            {
-                                Disconnect(connections[i]);
-                            }
-                        }
-                        node.Outputs.RemoveAt(portIndex);
-                        node.OutputPortReferences.RemoveAt(portIndex);
-                        break;
-                    }
-                default:
-                    throw new ArgumentOutOfRangeException(nameof(type), type, "Invalid port type");
-            }
+        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        void ValidateNodeHandleForPortAdditionBurst(Handle nodeHandle)
+        {
+            if (!nodeHandle.Alive)
+                throw new ArgumentException("Cannot add port to inactive node", nameof(nodeHandle));
+        }
+
+        void RejectRootNodePortAddition(DSPNode node, PortType type)
+        {
+            RejectRootNodePortAdditionMono(node, type);
+            RejectRootNodePortAdditionBurst(node, type);
+        }
+
+        [BurstDiscard]
+        void RejectRootNodePortAdditionMono(DSPNode node, PortType type)
+        {
+            if (m_RootNode.Equals(node) && (type == PortType.Outlet || node.Inputs.Count > 0))
+                throw new ArgumentException("Cannot add ports to the root node");
+        }
+
+        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        void RejectRootNodePortAdditionBurst(DSPNode node, PortType type)
+        {
+            if (m_RootNode.Equals(node) && (type == PortType.Outlet || node.Inputs.Count > 0))
+                throw new ArgumentException("Cannot add ports to the root node");
         }
 
         internal void SetSampleProvider(Handle nodeHandle, int providerIndex, int subIndex, uint providerId, bool destroyOnRemove)
@@ -1297,20 +1370,18 @@ namespace Unity.Audio
 
         internal int FindFreeEventHandlerIndex()
         {
-            var handlers = EventHandlers;
-            for (int i = 0; i < handlers.Count; ++i)
-                if (handlers[i].Hash == 0)
+            for (int i = 0; i < EventHandlers.Count; ++i)
+                if (EventHandlers[i].Hash == 0)
                     return i;
-            handlers.Add(default);
-            return handlers.Count - 1;
+            EventHandlers.Add(default);
+            return EventHandlers.Count - 1;
         }
 
         private int RegisterNodeEventHandler<TNodeEvent>(GCHandle handler)
             where TNodeEvent : struct
         {
             int index = FindFreeEventHandlerIndex();
-            var handlers = EventHandlers;
-            handlers[index] = new EventHandlerDescription
+            EventHandlers[index] = new EventHandlerDescription
             {
                 Hash = BurstRuntime.GetHashCode64<TNodeEvent>(),
                 Handler = handler,
@@ -1320,22 +1391,20 @@ namespace Unity.Audio
 
         private bool UnregisterNodeEventHandler(int handlerId)
         {
-            var handlers = EventHandlers;
-            if (handlerId < 0 || handlerId >= handlers.Count || handlers[handlerId].Hash == 0)
+            if (handlerId < 0 || handlerId >= EventHandlers.Count || EventHandlers[handlerId].Hash == 0)
                 return false;
-            ReleaseGCHandle(handlers[handlerId].Handler);
-            handlers[handlerId] = default;
+            ReleaseGCHandle(EventHandlers[handlerId].Handler);
+            EventHandlers[handlerId] = default;
             return true;
         }
 
         internal int FindFreeUpdateRequestIndex()
         {
-            var requests = UpdateRequestHandles;
-            for (int i = 0; i < requests.Count; ++i)
-                if (!requests[i].Node.Valid)
+            for (int i = 0; i < m_UpdateRequestHandles.Count; ++i)
+                if (!m_UpdateRequestHandles[i].Node.Valid)
                     return i;
-            requests.Add(default);
-            return requests.Count - 1;
+            m_UpdateRequestHandles.Add(default);
+            return m_UpdateRequestHandles.Count - 1;
         }
 
         /// <summary>
@@ -1356,18 +1425,18 @@ namespace Unity.Audio
                 return;
             }
 
-            var requests = UpdateRequestHandles;
-            var description = requests[requestHandle.Id];
+            var description = m_UpdateRequestHandles[requestHandle.Id];
             description.Fence = fence;
             description.JobStructData = jobStructMemory;
-            requests[requestHandle.Id] = description;
+            m_UpdateRequestHandles[requestHandle.Id] = description;
             var callbackDescription = new EventHandlerDescription
             {
                 Handler = description.Callback,
             };
             if (description.Callback.IsAllocated)
             {
-                EventHandlerDescription* temporaryCallback = EventHandlerAllocator.Acquire();
+                //EventHandlerDescription* temporaryCallback = EventHandlerAllocator.Acquire();
+                EventHandlerAllocator.Acquire(out EventHandlerDescription* temporaryCallback);
                 *temporaryCallback = callbackDescription;
                 MainThreadCallbacks.Enqueue(temporaryCallback);
             }
@@ -1375,7 +1444,7 @@ namespace Unity.Audio
 
         internal DSPNodeUpdateRequestDescription LookupUpdateRequest(Handle handle)
         {
-            return UpdateRequestHandles[handle.Id];
+            return m_UpdateRequestHandles[handle.Id];
         }
 
         internal void RegisterUpdateRequest<TAudioKernelUpdate, TParameters, TProviders, TAudioKernel>(DSPNodeUpdateRequest<TAudioKernelUpdate, TParameters, TProviders, TAudioKernel> request, GCHandle callback)
@@ -1384,10 +1453,9 @@ namespace Unity.Audio
             where TProviders : unmanaged, Enum
             where TAudioKernel : struct, IAudioKernel<TParameters, TProviders>
         {
-            var requests = UpdateRequestHandles;
             var handle = request.Handle;
             handle.Id = FindFreeUpdateRequestIndex();
-            requests[handle.Id] = new DSPNodeUpdateRequestDescription
+            m_UpdateRequestHandles[handle.Id] = new DSPNodeUpdateRequestDescription
             {
                 Node = request.OwningNode,
                 Callback = callback,
@@ -1397,12 +1465,11 @@ namespace Unity.Audio
 
         internal void ReleaseUpdateRequest(Handle handle)
         {
-            var requests = UpdateRequestHandles;
-            var request = requests[handle.Id];
+            var request = m_UpdateRequestHandles[handle.Id];
             ReleaseGCHandle(request.Callback);
             if (request.JobStructData != null)
                 Utility.FreeUnsafe(request.JobStructData, Allocator.Persistent);
-            requests[handle.Id] = default;
+            m_UpdateRequestHandles[handle.Id] = default;
             DisposeHandle(handle);
         }
 
@@ -1417,6 +1484,26 @@ namespace Unity.Audio
         {
             var flagsInt = UnsafeUtility.EnumToInt(flags);
             return (UnsafeUtility.EnumToInt(value) & flagsInt) == flagsInt;
+        }
+
+        private void ValidateInitialState()
+        {
+            ValidateInitialStateMono();
+            ValidateInitialStateBurst();
+        }
+
+        [BurstDiscard]
+        private void ValidateInitialStateMono()
+        {
+            if (!m_RootNode.Valid || m_RootNode.Inputs.Count <= 0)
+                throw new InvalidOperationException("DSPGraph has not been initalized");
+        }
+
+        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        private void ValidateInitialStateBurst()
+        {
+            if (!m_RootNode.Valid || m_RootNode.Inputs.Count <= 0)
+                throw new InvalidOperationException("DSPGraph has not been initalized");
         }
 
         internal struct EventHandlerDescription
@@ -1443,6 +1530,7 @@ namespace Unity.Audio
         /// We run this kernel on the root node.
         /// Its only purpose is to update the clock after the graph has run.
         /// </summary>
+        [BurstCompile(CompileSynchronously = true)]
         struct UpdateDSPClockKernel : IAudioKernel<UpdateDSPClockKernel.NoParameters, UpdateDSPClockKernel.NoProviders>
         {
             [NativeDisableUnsafePtrRestriction]
@@ -1469,6 +1557,7 @@ namespace Unity.Audio
         /// <summary>
         /// Pass in the DSPClock pointer from the owning graph
         /// </summary>
+        [BurstCompile(CompileSynchronously = true)]
         struct InitializeDSPClockKernel : IAudioKernelUpdate<UpdateDSPClockKernel.NoParameters, UpdateDSPClockKernel.NoProviders, UpdateDSPClockKernel>
         {
             [NativeDisableUnsafePtrRestriction]

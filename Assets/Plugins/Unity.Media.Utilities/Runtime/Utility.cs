@@ -38,6 +38,8 @@ namespace Unity.Media.Utilities
         public static unsafe T* AllocateUnsafe<T>(int count = 1, Allocator allocator = Allocator.Persistent, bool permanentAllocation = false)
             where T : unmanaged
         {
+            if (count == 0)
+                return null;
             var memory = (T*)UnsafeUtility.Malloc(count * UnsafeUtility.SizeOf<T>(), UnsafeUtility.AlignOf<T>(), allocator);
             if (!permanentAllocation)
                 RegisterAllocation(memory, allocator);
@@ -53,6 +55,8 @@ namespace Unity.Media.Utilities
         public static unsafe void FreeUnsafe<T>(T* memory, Allocator allocator = Allocator.Persistent)
             where T : unmanaged
         {
+            if (memory == null)
+                return;
             RegisterDeallocation(memory, allocator);
             UnsafeUtility.Free(memory, allocator);
         }
@@ -104,6 +108,80 @@ namespace Unity.Media.Utilities
             for (var i = 0; i < byteCount; ++i)
                 byteBuffer[i] = clearValue;
 #endif
+        }
+
+        /// <summary>
+        /// Read a per-channel audio stream (LLLL...RRRR...) and write an interleaved audio stream (LRLRLRLR...)
+        /// </summary>
+        /// <param name="source">A pointer to a per-channel buffer</param>
+        /// <param name="destination">A pointer to the destination buffer</param>
+        /// <param name="frames">How many frames are to be converted</param>
+        /// <param name="channels">How many channels are in the source</param>
+        /// <param name="writeMode">The write mode to be used</param>
+        /// <remarks>The source buffer is assumed to be one float per channel per frame</remarks>
+        public static unsafe void InterleaveAudioStream(float* source, float* destination, int frames, int channels, BufferWriteMode writeMode = BufferWriteMode.Overwrite)
+        {
+            if (writeMode == BufferWriteMode.Additive)
+            {
+                InterleaveAudioStreamAdditive(source, destination, frames, channels);
+                return;
+            }
+
+            for (int channel = 0; channel < channels; ++channel)
+            {
+                int interleavedIndex = channel;
+                int baseFrame = channel * frames;
+                for (int frame = 0; frame < frames; ++frame, interleavedIndex += channels)
+                    destination[interleavedIndex] = source[baseFrame + frame];
+            }
+        }
+
+        static unsafe void InterleaveAudioStreamAdditive(float* source, float* destination, int frames, int channels)
+        {
+            for (int channel = 0; channel < channels; ++channel)
+            {
+                int interleavedIndex = channel;
+                int baseFrame = channel * frames;
+                for (int frame = 0; frame < frames; ++frame, interleavedIndex += channels)
+                    destination[interleavedIndex] = destination[interleavedIndex] + source[baseFrame + frame];
+            }
+        }
+
+        /// <summary>
+        /// Read an interleaved audio stream (LRLRLRLR...) and write an per-channel audio stream (LLLL...RRRR...)
+        /// </summary>
+        /// <param name="source">A pointer to an interleaved buffer</param>
+        /// <param name="destination">A pointer to the destination buffer</param>
+        /// <param name="frames">How many frames are to be converted</param>
+        /// <param name="channels">How many channels are in the source</param>
+        /// <param name="writeMode">The write mode to be used</param>
+        /// <remarks>The source buffer is assumed to be one float per channel per frame</remarks>
+        public static unsafe void DeinterleaveAudioStream(float* source, float* destination, int frames, int channels, BufferWriteMode writeMode = BufferWriteMode.Overwrite)
+        {
+            if (writeMode == BufferWriteMode.Additive)
+            {
+                DeinterleaveAudioStreamAdditive(source, destination, frames, channels);
+                return;
+            }
+
+            for (int channel = 0; channel < channels; ++channel)
+            {
+                int interleavedIndex = channel;
+                int baseFrame = channel * frames;
+                for (int frame = 0; frame < frames; ++frame, interleavedIndex += channels)
+                    destination[baseFrame + frame] = source[interleavedIndex];
+            }
+        }
+
+        private static unsafe void DeinterleaveAudioStreamAdditive(float* source, float* destination, int frames, int channels)
+        {
+            for (int channel = 0; channel < channels; ++channel)
+            {
+                int interleavedIndex = channel;
+                int baseFrame = channel * frames;
+                for (int frame = 0; frame < frames; ++frame, interleavedIndex += channels)
+                    destination[baseFrame + frame] = destination[baseFrame + frame] + source[interleavedIndex];
+            }
         }
 
         [BurstDiscard]
@@ -163,6 +241,47 @@ namespace Unity.Media.Utilities
         internal static void YieldProcessor()
         {
             s_Waiter.SpinOnce();
+        }
+
+        internal static long InterlockedReadLong(ref long location)
+        {
+            // Burst doesn't support Interlocked.Read
+            return Interlocked.Add(ref location, 0);
+        }
+
+        internal static int InterlockedReadInt(ref int location)
+        {
+            // Burst doesn't support Interlocked.Read
+            return Interlocked.Add(ref location, 0);
+        }
+
+        /// <summary>
+        /// Validate an index within a range
+        /// </summary>
+        /// <param name="index">The index to be validated</param>
+        /// <param name="highestIndex">The highest valid index</param>
+        /// <param name="lowestIndex">The lowest valid index</param>
+        /// <exception cref="IndexOutOfRangeException">
+        /// Thrown if <paramref name="index"/> is greater than <paramref name="highestIndex"/> or less than <paramref name="lowestIndex"/>
+        /// </exception>
+        public static void ValidateIndex(int index, int highestIndex = int.MaxValue, int lowestIndex = 0)
+        {
+            ValidateIndexMono(index, highestIndex, lowestIndex);
+            ValidateIndexBurst(index, highestIndex, lowestIndex);
+        }
+
+        [BurstDiscard]
+        private static void ValidateIndexMono(int index, int highestIndex, int lowestIndex)
+        {
+            if (index < lowestIndex || index > highestIndex)
+                throw new IndexOutOfRangeException();
+        }
+
+        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        private static void ValidateIndexBurst(int index, int highestIndex, int lowestIndex)
+        {
+            if (index < lowestIndex || index > highestIndex)
+                throw new IndexOutOfRangeException();
         }
     }
 }

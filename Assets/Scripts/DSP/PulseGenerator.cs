@@ -3,7 +3,7 @@ using System.Collections;
 using Unity.Burst;
 using System.Runtime.InteropServices;
 
-[BurstCompile]
+[BurstCompile(CompileSynchronously = true)]
 [StructLayout(LayoutKind.Sequential)]
 public struct PulseGenerator
 {

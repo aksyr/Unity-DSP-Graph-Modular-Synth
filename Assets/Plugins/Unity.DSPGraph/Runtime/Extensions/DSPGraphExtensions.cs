@@ -11,7 +11,7 @@ namespace Unity.Audio
         private static GrowableBuffer<DSPGraph> s_GraphRegistry;
         private static bool s_Initialized;
 
-        public static unsafe DSPGraph** UnsafeGraphBuffer => (DSPGraph**)s_GraphRegistry.Description.Data;
+        public static unsafe DSPGraph** UnsafeGraphBuffer => s_GraphRegistry.UnsafeDataPointer;
         internal static readonly DSPGraph.Trampoline DisposeMethod = DSPGraph.DoDispose;
 
         public static void Initialize()
@@ -76,6 +76,13 @@ namespace Unity.Audio
         public static void PostEvent<TNodeEvent>(this DSPGraph self, int nodeIndex, TNodeEvent data)
             where TNodeEvent : struct
         {
+            //var hash = BurstRuntime.GetHashCode64<TNodeEvent>();
+            //var eventHandlers = self.EventHandlers;
+
+            //for (int i = 0; i < eventHandlers.Count; ++i)
+            //    if (eventHandlers[i].Hash == hash)
+            //        QueueEventCallback(self, nodeIndex, eventHandlers[i].Handler, data);
+
             var hash = BurstRuntime.GetHashCode64<TNodeEvent>();
             var eventHandlers = self.EventHandlers;
 
@@ -87,7 +94,8 @@ namespace Unity.Audio
         private static unsafe void QueueEventCallback<TNodeEvent>(this DSPGraph self, int nodeIndex, GCHandle handler, TNodeEvent data)
             where TNodeEvent : struct
         {
-            var handle = self.EventHandlerAllocator.Acquire();
+            //var handle = self.EventHandlerAllocator.Acquire();
+            var result = self.EventHandlerAllocator.Acquire(out DSPGraph.EventHandlerDescription* handle);
             *handle = new DSPGraph.EventHandlerDescription
             {
                 Handler = handler,
@@ -100,10 +108,9 @@ namespace Unity.Audio
 
         public static unsafe void InvokePendingCallbacks(this DSPGraph self)
         {
-            var invocations = self.MainThreadCallbacks;
-            while (!invocations.IsEmpty)
+            while (!self.MainThreadCallbacks.IsEmpty)
             {
-                DSPGraph.EventHandlerDescription* description = invocations.Dequeue();
+                DSPGraph.EventHandlerDescription* description = self.MainThreadCallbacks.Dequeue();
 
                 if (description->Handler.Target != null)
                 {

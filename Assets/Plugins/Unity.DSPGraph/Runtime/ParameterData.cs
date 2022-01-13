@@ -1,5 +1,7 @@
 using System;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
+using Unity.Burst;
 using Unity.Collections.LowLevel.Unsafe;
 
 namespace Unity.Audio
@@ -23,6 +25,7 @@ namespace Unity.Audio
         internal readonly float Min;
         internal readonly float Max;
 
+        /// <summary></summary>
         /// <param name="min">The minimum value</param>
         /// <param name="max">The maximum value</param>
         public ParameterRangeAttribute(float min, float max)
@@ -41,6 +44,7 @@ namespace Unity.Audio
     {
         internal readonly float DefaultValue;
 
+        /// <summary></summary>
         /// <param name="defaultVal">The default value for this parameter</param>
         public ParameterDefaultAttribute(float defaultVal)
         {
@@ -54,8 +58,12 @@ namespace Unity.Audio
     /// <see cref="ExecuteContext{TParameters,TProviders}"/>
     /// <seealso cref="IAudioKernel{TParameters,TProviders}"/>
     /// </summary>
-    public unsafe struct ParameterData<P> where P : unmanaged, Enum
+    /// <typeparam name="TParameter">The enum type for the parameter</typeparam>
+    public unsafe struct ParameterData<TParameter> where TParameter : unmanaged, Enum
     {
+        /// <summary>
+        /// Get the value of a parameter at a sample offset
+        /// </summary>
         /// <param name="parameter">
         /// A specific enum value from the parameter enumeration specified in the
         /// audio job.
@@ -65,7 +73,7 @@ namespace Unity.Audio
         /// The time to evaluate the parameter at.
         /// </param>
         /// <returns>The value of a parameter.</returns>
-        public float GetFloat(P parameter, int sampleOffset)
+        public float GetFloat(TParameter parameter, int sampleOffset)
         {
             return GetFloat(UnsafeUtility.EnumToInt(parameter), sampleOffset);
         }
@@ -73,17 +81,53 @@ namespace Unity.Audio
         internal float GetFloat(int parameter, int sampleOffset)
         {
             if (parameter >= ParametersCount)
-                throw new ArgumentException("Undefined parameter in ParameterData.GetValue", nameof(parameter));
+                ThrowUndefinedParameterError(parameter);
 
             if (ParameterKeys == null || Parameters[parameter].m_KeyIndex == DSPParameterKey.NullIndex)
                 return Parameters[parameter].m_Value;
 
             if (sampleOffset >= ReadLength)
-                throw new ArgumentOutOfRangeException(nameof(sampleOffset), $"sampleOffset {sampleOffset} greater than the read length {ReadLength} of the frame");
+                ThrowInvalidSampleOffsetError(sampleOffset);
 
             return DSPParameterInterpolator.Generate(sampleOffset, ParameterKeys,
                 Parameters[parameter].m_KeyIndex, DSPClock, Parameters[parameter].m_Min,
                 Parameters[parameter].m_Max, Parameters[parameter].m_Value)[0];
+        }
+
+        private static void ThrowUndefinedParameterError(int parameter)
+        {
+            ThrowUndefinedParameterErrorMono(parameter);
+            ThrowUndefinedParameterErrorBurst(parameter);
+        }
+
+        [BurstDiscard]
+        private static void ThrowUndefinedParameterErrorMono(int parameter)
+        {
+            throw new ArgumentException("Undefined parameter in ParameterData.GetValue", nameof(parameter));
+        }
+
+        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        private static void ThrowUndefinedParameterErrorBurst(int parameter)
+        {
+            throw new ArgumentException("Undefined parameter in ParameterData.GetValue", nameof(parameter));
+        }
+
+        private void ThrowInvalidSampleOffsetError(int sampleOffset)
+        {
+            ThrowInvalidSampleOffsetErrorMono(sampleOffset);
+            ThrowInvalidSampleOffsetErrorBurst(sampleOffset);
+        }
+
+        [BurstDiscard]
+        private void ThrowInvalidSampleOffsetErrorMono(int sampleOffset)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sampleOffset), $"sampleOffset {sampleOffset} greater than the read length {ReadLength} of the frame");
+        }
+
+        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        private void ThrowInvalidSampleOffsetErrorBurst(int sampleOffset)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sampleOffset), $"sampleOffset {sampleOffset} greater than the read length {ReadLength} of the frame");
         }
 
         internal NativeDSPParameter* Parameters;

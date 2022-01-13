@@ -14,6 +14,9 @@ namespace Unity.Audio
     /// See also <seealso cref="IAudioKernel{TParams,TProvs}"/> for an in depth description of the
     /// the type parameters.
     /// </summary>
+    /// <typeparam name="TParameters">See <see cref="IAudioKernel{TParameters,TProviders}"/></typeparam>
+    /// <typeparam name="TProviders">See <see cref="IAudioKernel{TParameters,TProviders}"/></typeparam>
+    /// <typeparam name="TKernel">An implementation of <see cref="IAudioKernel{TParameters,TProviders}"/></typeparam>
     [JobProducerType(typeof(AudioKernelUpdateExtensions.AudioKernelUpdateJobStructProduce< , , , >))]
     public interface IAudioKernelUpdate<TParameters, TProviders, TKernel>
         where TParameters : unmanaged, Enum

@@ -6,7 +6,7 @@ using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
 
-[BurstCompile]
+[BurstCompile(CompileSynchronously = true)]
 public struct MicrophoneNode : IAudioKernel<MicrophoneNode.Parameters, MicrophoneNode.Providers>
 {
     public enum Parameters { Rate }
@@ -46,26 +46,46 @@ public struct MicrophoneNode : IAudioKernel<MicrophoneNode.Parameters, Microphon
 
             if (context.Outputs.Count == 0) return;
 
-            int samplesCount = context.Outputs.GetSampleBuffer(0).Samples;
+            //int samplesCount = context.Outputs.GetSampleBuffer(0).Samples;
+            //for (int i = 0; i < samplesCount; ++i)
+            //{
+            //    for (int o = 0; o < context.Outputs.Count; ++o)
+            //    {
+            //        SampleBuffer output = context.Outputs.GetSampleBuffer(o);
+            //        NativeArray<float> outputBuffer = output.Buffer;
+            //        for (int j = 0; j < output.Channels; ++j)
+            //        {
+            //            outputBuffer[(i * output.Channels) + j] = MicrophoneBuffer[Position];
+            //        }
+            //    }
 
-            for (int i = 0; i < samplesCount; ++i)
+            //    ++Position;
+            //    if (Position >= MicrophoneBuffer.Length)
+            //    {
+            //        Position = 0;
+            //    }
+            //}
+
+            int samplesCount = context.Outputs.GetSampleBuffer(0).Samples;
+            for (int o = 0; o < context.Outputs.Count; ++o)
             {
-                for (int o = 0; o < context.Outputs.Count; ++o)
+                SampleBuffer output = context.Outputs.GetSampleBuffer(o);
+                int position = Position;
+                for (int c = 0; c < output.Channels; ++c)
                 {
-                    SampleBuffer output = context.Outputs.GetSampleBuffer(o);
-                    NativeArray<float> outputBuffer = output.Buffer;
-                    for (int j = 0; j < output.Channels; ++j)
+                    NativeArray<float> outputBuffer = output.GetBuffer(c);
+                    for (int s = 0; s < output.Samples; ++s)
                     {
-                        outputBuffer[(i * output.Channels) + j] = MicrophoneBuffer[Position];
+                        outputBuffer[s] = MicrophoneBuffer[position];
+                        ++position;
+                        if (position >= MicrophoneBuffer.Length)
+                        {
+                            position = 0;
+                        }
                     }
                 }
-
-                ++Position;
-                if (Position >= MicrophoneBuffer.Length)
-                {
-                    Position = 0;
-                }
             }
+            Position = (Position + samplesCount) % MicrophoneBuffer.Length;
         }
     }
 

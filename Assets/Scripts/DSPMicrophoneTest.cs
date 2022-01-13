@@ -47,14 +47,17 @@ public class DSPMicrophoneTest : MonoBehaviour
 
     void ConfigureDSP()
     {
-        AudioConfiguration audioConfig = AudioSettings.GetConfiguration();
-        Debug.LogFormat("BufferSize={0} SampleRate={1}", audioConfig.dspBufferSize, audioConfig.sampleRate);
-        _MicrophoneClip = Microphone.Start(Microphone.devices[0], true, 1, audioConfig.sampleRate);
+        var format = ChannelEnumConverter.GetSoundFormatFromSpeakerMode(AudioSettings.speakerMode);
+        var channels = ChannelEnumConverter.GetChannelCountFromSoundFormat(format);
+        AudioSettings.GetDSPBufferSize(out var bufferLength, out var numBuffers);
+        var sampleRate = AudioSettings.outputSampleRate;
+        Debug.LogFormat("Format={2} Channels={3} BufferLength={0} SampleRate={1}", bufferLength, sampleRate, format, channels);
+        _MicrophoneClip = Microphone.Start(Microphone.devices[0], true, 1, sampleRate);
         Debug.LogFormat("Microphone Channels={0} Frequency={1} Samples={2} Ambisonic={3}", _MicrophoneClip.channels, _MicrophoneClip.frequency, _MicrophoneClip.samples, _MicrophoneClip.ambisonic);
         _MicrophoneBuffer = new NativeArray<float>(_MicrophoneClip.samples, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
         _MicrophoneDataArray = new float[_MicrophoneClip.samples];
 
-        _Graph = DSPGraph.Create(SoundFormat.Stereo, 2, audioConfig.dspBufferSize, audioConfig.sampleRate);
+        _Graph = DSPGraph.Create(format, channels, bufferLength, sampleRate);
         _Driver = new MyAudioDriver { Graph = _Graph };
         _OutputHandle = _Driver.AttachToDefaultOutput();
 
@@ -65,18 +68,18 @@ public class DSPMicrophoneTest : MonoBehaviour
             // create nodes
             //
             _Microphone = block.CreateDSPNode<MicrophoneNode.Parameters, MicrophoneNode.Providers, MicrophoneNode>();
-            block.AddOutletPort(_Microphone, 1, SoundFormat.Mono);
+            block.AddOutletPort(_Microphone, 1);
 
             _Scope = block.CreateDSPNode<ScopeNode.Parameters, ScopeNode.Providers, ScopeNode>();
-            block.AddInletPort(_Scope, 1, SoundFormat.Mono);
+            block.AddInletPort(_Scope, 1);
 
             _Spectrum = block.CreateDSPNode<SpectrumNode.Parameters, SpectrumNode.Providers, SpectrumNode>();
-            block.AddInletPort(_Spectrum, 1, SoundFormat.Mono);
+            block.AddInletPort(_Spectrum, 1);
 
             _MonoToStereo = block.CreateDSPNode<MonoToStereoNode.Parameters, MonoToStereoNode.Providers, MonoToStereoNode>();
-            block.AddInletPort(_MonoToStereo, 1, SoundFormat.Mono); // left
-            block.AddInletPort(_MonoToStereo, 1, SoundFormat.Mono); // right
-            block.AddOutletPort(_MonoToStereo, 2, SoundFormat.Stereo);
+            block.AddInletPort(_MonoToStereo, 1); // left
+            block.AddInletPort(_MonoToStereo, 1); // right
+            block.AddOutletPort(_MonoToStereo, 2);
 
             //
             // connect nodes

@@ -7,24 +7,56 @@ namespace Unity.Audio
     /// </summary>
     public struct DSPConnection : IHandle<DSPConnection>
     {
+        /// <summary>
+        /// An value to indicate that a port index is invalid
+        /// </summary>
         public const int InvalidIndex = -1;
+
+        /// <summary>
+        /// The minimum possible attenuation value
+        /// </summary>
         public const float MinimumAttenuation = 0.0f;
+
+        /// <summary>
+        /// The maximum possible attenuation value
+        /// </summary>
         public const float MaximumAttenuation = float.MaxValue;
+
+        /// <summary>
+        /// The default attenuation value (no attenuation)
+        /// </summary>
         public const float DefaultAttenuation = 1.0f;
 
+        /// <summary>
+        /// Whether the connection handle is valid
+        /// </summary>
         public bool Valid => Handle.Valid && Graph.Valid;
 
+        /// <summary>
+        /// Whether this connection is the same as another instance
+        /// </summary>
+        /// <param name="other">The other instance to compare</param>
+        /// <returns></returns>
         public bool Equals(DSPConnection other)
         {
             return Handle.Equals(other.Handle) && Graph.Equals(other.Graph);
         }
 
+        /// <summary>
+        /// Whether this connection is the same as another instance
+        /// </summary>
+        /// <param name="obj">The other instance to compare</param>
+        /// <returns></returns>
         public override bool Equals(object obj)
         {
             if (ReferenceEquals(null, obj)) return false;
             return obj is DSPConnection other && Equals(other);
         }
 
+        /// <summary>
+        /// Returns a unique hash for this connection
+        /// </summary>
+        /// <returns></returns>
         public override int GetHashCode()
         {
             unchecked
