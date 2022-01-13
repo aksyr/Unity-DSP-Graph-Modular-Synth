@@ -1,6 +1,6 @@
 # Unity DSP Graph Modular Synth
 **Unity DSP Graph Modular Synth** is an experiment in creating modular synth using Unity's **DSP Graph** preview package.
-It uses modified DSP Graph 0.1.0-preview.11 which allows inputs and outputs to remain not connected so that it's easier to leave nodes without all connections.
+It uses modified DSP Graph 0.1.0-preview.18 which allows inputs and outputs to remain disconnected so that it's easier to leave nodes without every input/output connected.
 A lot of things in this project are directly inspired by **[VCV Rack](https://vcvrack.com)**.
 
 ![sample](https://github.com/aksyr/Unity-DSP-Graph-Modular-Synth/raw/master/sampleGraph.png)
